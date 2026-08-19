@@ -202,14 +202,23 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
       emitLine(lane.fromCol, lane.fromRow, column, id, colourIndex, committed)
       // Any other lane waiting on the same tip terminates at this dot; its
       // column and colour become reusable. The lane's line runs vertically to
-      // this row at its own column and then turns into the dot with a short
-      // same-row segment — never a long diagonal jump.
+      // the row ABOVE the dot, then sweeps across the band into the dot — the
+      // turn never happens on the dot's own row, and the whole turn keeps the
+      // lane's colour.
       for (let other = lanes.length - 1; other >= 0; other--) {
         if (lanes[other].tip === commit.hash) {
           const otherLane = lanes[other]
-          emitLine(otherLane.fromCol, otherLane.fromRow, otherLane.column, id, otherLane.colourIndex, otherLane.committed)
-          if (otherLane.column !== column) {
-            emitLine(otherLane.column, id, column, id, otherLane.colourIndex, otherLane.committed)
+          if (id > 0) {
+            emitLine(otherLane.fromCol, otherLane.fromRow, otherLane.column, id - 1, otherLane.colourIndex, otherLane.committed)
+            if (otherLane.column !== column) {
+              emitLine(otherLane.column, id - 1, column, id, otherLane.colourIndex, otherLane.committed)
+            }
+          } else {
+            // Top row: there is no band above; fall back to a same-row turn.
+            emitLine(otherLane.fromCol, otherLane.fromRow, otherLane.column, id, otherLane.colourIndex, otherLane.committed)
+            if (otherLane.column !== column) {
+              emitLine(otherLane.column, id, column, id, otherLane.colourIndex, otherLane.committed)
+            }
           }
           releaseColumn(otherLane.column)
           releaseColour(otherLane.colourIndex)
@@ -236,20 +245,20 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
       lanes.push({ column, colourIndex, tip: commit.parents[0], fromRow: id, fromCol: column, committed: !isPseudo })
       // Each additional parent either joins an already-open lane (one column
       // per branch chain, no matter how many merges feed it) or opens a fresh
-      // lane on a new column. In both cases the connection from this dot to
-      // the lane is a short segment at this row and the lane itself runs
-      // vertically, so repeated merges of one branch never widen the graph.
+      // lane on a new column. In both cases the connection sweeps across the
+      // band BELOW this row (never a same-row turn) and is drawn in the lane's
+      // own colour, so the lane reads as one continuous stroke.
       for (let p = 1; p < commit.parents.length; p++) {
         const parent = commit.parents[p]
         const existing = lanes.findIndex((l) => l.tip === parent)
         if (existing >= 0) {
           const lane = lanes[existing]
-          if (lane.column !== column) emitLine(column, id, lane.column, id, colourIndex, !isPseudo)
+          if (lane.column !== column) emitLine(column, id, lane.column, id + 1, lane.colourIndex, lane.committed)
         } else {
           const extraColumn = takeColumn()
           const extraColour = takeColour()
-          if (extraColumn !== column) emitLine(column, id, extraColumn, id, colourIndex, !isPseudo)
-          lanes.push({ column: extraColumn, colourIndex: extraColour, tip: parent, fromRow: id, fromCol: extraColumn, committed: !isPseudo })
+          if (extraColumn !== column) emitLine(column, id, extraColumn, id + 1, extraColour, !isPseudo)
+          lanes.push({ column: extraColumn, colourIndex: extraColour, tip: parent, fromRow: id + 1, fromCol: extraColumn, committed: !isPseudo })
         }
       }
     } else {
