@@ -202,16 +202,19 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
       emitLine(lane.fromCol, lane.fromRow, column, id, colourIndex, committed)
       // Any other lane waiting on the same tip terminates at this dot; its
       // column and colour become reusable. The lane's line runs vertically to
-      // the row ABOVE the dot, then sweeps across the band into the dot — the
-      // turn never happens on the dot's own row, and the whole turn keeps the
-      // lane's colour.
+      // the row(s) ABOVE the dot, then sweeps across the band(s) into the dot —
+      // the turn never happens on the dot's own row, wider jumps start turning
+      // proportionally earlier so the curve stays round, and the whole turn
+      // keeps the lane's colour.
       for (let other = lanes.length - 1; other >= 0; other--) {
         if (lanes[other].tip === commit.hash) {
           const otherLane = lanes[other]
           if (id > 0) {
-            emitLine(otherLane.fromCol, otherLane.fromRow, otherLane.column, id - 1, otherLane.colourIndex, otherLane.committed)
+            const span = Math.max(1, Math.ceil(Math.abs(column - otherLane.column) / 2))
+            const turnRow = Math.max(otherLane.fromRow, id - span)
+            emitLine(otherLane.fromCol, otherLane.fromRow, otherLane.column, turnRow, otherLane.colourIndex, otherLane.committed)
             if (otherLane.column !== column) {
-              emitLine(otherLane.column, id - 1, column, id, otherLane.colourIndex, otherLane.committed)
+              emitLine(otherLane.column, turnRow, column, id, otherLane.colourIndex, otherLane.committed)
             }
           } else {
             // Top row: there is no band above; fall back to a same-row turn.
@@ -257,8 +260,11 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
         } else {
           const extraColumn = takeColumn()
           const extraColour = takeColour()
-          if (extraColumn !== column) emitLine(column, id, extraColumn, id + 1, extraColour, !isPseudo)
-          lanes.push({ column: extraColumn, colourIndex: extraColour, tip: parent, fromRow: id + 1, fromCol: extraColumn, committed: !isPseudo })
+          // The connection sweeps the band(s) below this row; wider jumps span
+          // more bands so the curve stays round, and the lane starts there.
+          const span = Math.max(1, Math.ceil(Math.abs(extraColumn - column) / 2))
+          if (extraColumn !== column) emitLine(column, id, extraColumn, id + span, extraColour, !isPseudo)
+          lanes.push({ column: extraColumn, colourIndex: extraColour, tip: parent, fromRow: id + span, fromCol: extraColumn, committed: !isPseudo })
         }
       }
     } else {

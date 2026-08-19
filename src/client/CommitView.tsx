@@ -635,9 +635,10 @@ export function CommitView(props: ViewProps): ReactNode {
         const m = GRID.y * 0.4
         d += `C${p1.x.toFixed(0)},${(p1.y + m).toFixed(1)} ${p2.x.toFixed(0)},${(p2.y - m).toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
       } else {
-        // Lane change over rows (defensive; the layout emits none): control
-        // points at the middle of each row band keep the curve smooth.
-        const mid = GRID.y / 2
+        // Lane change over rows: control points pushed toward the band edges
+        // (¾ of a row from each endpoint) so the bend spreads evenly and the
+        // joins with the vertical lanes stay gentle — a rounder turn.
+        const mid = GRID.y * 0.75
         d += `C${p1.x.toFixed(0)},${(p1.y + mid).toFixed(1)} ${p2.x.toFixed(0)},${(p2.y - mid).toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
       }
       lastX = p2.x

@@ -104,7 +104,7 @@ function buildSvgPaths(lines) {
       const m = GRID.y * 0.4
       d += `C${p1.x.toFixed(0)},${(p1.y + m).toFixed(1)} ${p2.x.toFixed(0)},${(p2.y - m).toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
     } else {
-      const mid = GRID.y / 2
+      const mid = GRID.y * 0.75
       d += `C${p1.x.toFixed(0)},${(p1.y + mid).toFixed(1)} ${p2.x.toFixed(0)},${(p2.y - mid).toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
     }
     lastX = p2.x; lastY = p2.y
