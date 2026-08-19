@@ -14,8 +14,10 @@
  *     commit takes the lane with the largest column and every other waiting
  *     lane terminates at its dot, so no line dangles past a loaded commit;
  *   - the first parent keeps the commit's column (one dot per lane, linear
- *     histories occupy a single column); each additional merge parent is
- *     placed on a new column of its own, carried down by that parent's chain;
+ *     histories occupy a single column); each additional merge parent either
+ *     joins an already-open lane for the same tip (one column per branch
+ *     chain, no matter how many merges feed it) or opens a fresh column that
+ *     the parent's chain carries down;
  *   - a lane whose tip never appears among the loaded commits extends to the
  *     bottom edge of the graph (open line);
  *   - lanes end at root commits; their column and colour return to free pools
@@ -198,9 +200,13 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
       colourIndex = lane.colourIndex
       committed = lane.committed
       emitLine(lane.fromCol, lane.fromRow, column, id, colourIndex, committed)
+      // Any other lane waiting on the same tip terminates at this dot; its
+      // column and colour become reusable (no dangles, no column leaks).
       for (let other = lanes.length - 1; other >= 0; other--) {
         if (lanes[other].tip === commit.hash) {
           emitLine(lanes[other].fromCol, lanes[other].fromRow, column, id, lanes[other].colourIndex, lanes[other].committed)
+          releaseColumn(lanes[other].column)
+          releaseColour(lanes[other].colourIndex)
           lanes.splice(other, 1)
         }
       }
@@ -222,11 +228,23 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
     if (commit.parents.length > 0) {
       // First parent keeps this lane (same column and colour).
       lanes.push({ column, colourIndex, tip: commit.parents[0], fromRow: id, fromCol: column, committed: !isPseudo })
-      // Each additional parent gets a new column of its own.
+      // Each additional parent either joins an already-open lane (one column
+      // per branch chain, no matter how many merges feed it) or opens a fresh
+      // lane on a new column. In both cases the connection from this dot to
+      // the lane is a short segment at this row and the lane itself runs
+      // vertically, so repeated merges of one branch never widen the graph.
       for (let p = 1; p < commit.parents.length; p++) {
-        const extraColumn = takeColumn()
-        const extraColour = takeColour()
-        lanes.push({ column: extraColumn, colourIndex: extraColour, tip: commit.parents[p], fromRow: id, fromCol: column, committed: !isPseudo })
+        const parent = commit.parents[p]
+        const existing = lanes.findIndex((l) => l.tip === parent)
+        if (existing >= 0) {
+          const lane = lanes[existing]
+          if (lane.column !== column) emitLine(column, id, lane.column, id, colourIndex, !isPseudo)
+        } else {
+          const extraColumn = takeColumn()
+          const extraColour = takeColour()
+          if (extraColumn !== column) emitLine(column, id, extraColumn, id, colourIndex, !isPseudo)
+          lanes.push({ column: extraColumn, colourIndex: extraColour, tip: parent, fromRow: id, fromCol: extraColumn, committed: !isPseudo })
+        }
       }
     } else {
       // Root commit: the lane ends here; column and colour become reusable.
