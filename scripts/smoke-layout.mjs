@@ -101,8 +101,8 @@ check(
   '',
 )
 check(
-  'merge: inflow reaches c1 dot column (x=1 at row 2)',
-  merged.lines.some((l) => l.p2.x === 1 && l.p2.y === 2),
+  'merge: inflow reaches c1 dot column (x=0 at row 2)',
+  merged.lines.some((l) => l.p2.x === 0 && l.p2.y === 2),
   '',
 )
 check(

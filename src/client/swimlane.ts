@@ -124,6 +124,9 @@ interface Lane {
   fromCol: number
   /** False when the lane originates from the uncommitted pseudo-row. */
   committed: boolean
+  /** The lowest row (grid) at which a merge's reuse connection joins this
+   *  lane; the lane's drawn vertical must cover at least this row. */
+  reuseArrival: number
 }
 
 /**
@@ -183,15 +186,18 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
     const commit = commits[id]
     const isPseudo = commit.hash === '*'
 
-    // Claim the lane this commit continues (the largest column among the
-    // lanes waiting on this tip); any other lane waiting on the same tip
-    // terminates at this row's dot so lines never dangle past a loaded commit.
+    // Claim the lane this commit continues (the LEFTMOST lane waiting on this
+    // tip — keeping the first-parent/main line on the left, as other git
+    // viewers do; in a GitHub-style history every merge is reachable from its
+    // feature branch too, and the rightmost lane would drag the main line
+    // across the graph). Any other lane waiting on the same tip terminates at
+    // this row's dot so lines never dangle past a loaded commit.
     let column: number
     let colourIndex: number
     let committed: boolean
     let claimed = -1
     for (let i = 0; i < lanes.length; i++) {
-      if (lanes[i].tip === commit.hash && (claimed === -1 || lanes[i].column > lanes[claimed].column)) claimed = i
+      if (lanes[i].tip === commit.hash && (claimed === -1 || lanes[i].column < lanes[claimed].column)) claimed = i
     }
     if (claimed >= 0) {
       const lane = lanes[claimed]
@@ -211,7 +217,9 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
           const otherLane = lanes[other]
           if (id > 0) {
             const span = Math.max(1, Math.ceil(Math.abs(column - otherLane.column) / 2))
-            const turnRow = Math.max(otherLane.fromRow, id - span)
+            // The vertical must cover every merge-reuse arrival row too, or
+            // those connections would land below the drawn line.
+            const turnRow = Math.max(otherLane.fromRow, id - span, otherLane.reuseArrival)
             emitLine(otherLane.fromCol, otherLane.fromRow, otherLane.column, turnRow, otherLane.colourIndex, otherLane.committed)
             if (otherLane.column !== column) {
               emitLine(otherLane.column, turnRow, column, id, otherLane.colourIndex, otherLane.committed)
@@ -245,7 +253,7 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
 
     if (commit.parents.length > 0) {
       // First parent keeps this lane (same column and colour).
-      lanes.push({ column, colourIndex, tip: commit.parents[0], fromRow: id, fromCol: column, committed: !isPseudo })
+      lanes.push({ column, colourIndex, tip: commit.parents[0], fromRow: id, fromCol: column, committed: !isPseudo, reuseArrival: 0 })
       // Each additional parent either joins an already-open lane (one column
       // per branch chain, no matter how many merges feed it) or opens a fresh
       // lane on a new column. In both cases the connection sweeps across the
@@ -256,15 +264,20 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
         const existing = lanes.findIndex((l) => l.tip === parent)
         if (existing >= 0) {
           const lane = lanes[existing]
-          if (lane.column !== column) emitLine(column, id, lane.column, id + 1, lane.colourIndex, lane.committed)
+          if (lane.column !== column) {
+            emitLine(column, id, lane.column, id + 1, lane.colourIndex, lane.committed)
+            // The lane's drawn vertical must reach this arrival row.
+            lane.reuseArrival = Math.max(lane.reuseArrival, id + 1)
+          }
         } else {
           const extraColumn = takeColumn()
           const extraColour = takeColour()
-          // The connection sweeps the band(s) below this row; wider jumps span
-          // more bands so the curve stays round, and the lane starts there.
-          const span = Math.max(1, Math.ceil(Math.abs(extraColumn - column) / 2))
-          if (extraColumn !== column) emitLine(column, id, extraColumn, id + span, extraColour, !isPseudo)
-          lanes.push({ column: extraColumn, colourIndex: extraColour, tip: parent, fromRow: id + span, fromCol: extraColumn, committed: !isPseudo })
+          // The connection sweeps exactly one band below this row: the parent
+          // is always at row >= id + 1, so the lane's vertical (starting at
+          // id + 1) can never overshoot it — a fixed span keeps every line
+          // flowing downward, at the cost of a flatter sweep for wide jumps.
+          if (extraColumn !== column) emitLine(column, id, extraColumn, id + 1, extraColour, !isPseudo)
+          lanes.push({ column: extraColumn, colourIndex: extraColour, tip: parent, fromRow: id + 1, fromCol: extraColumn, committed: !isPseudo, reuseArrival: 0 })
         }
       }
     } else {
