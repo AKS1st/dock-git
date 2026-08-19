@@ -1,0 +1,5 @@
+# dock-git bundle patch: mounts the git history graph feature plugin row
+# (client half registers its side-bar panel / activity item against the workbench base).
+- insert:
+    - id: dock-git
+      name: 'dock-git'
