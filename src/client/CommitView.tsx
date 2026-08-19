@@ -112,7 +112,7 @@ interface RemoteRowWire {
 
 /** Height of the inline expansion strip (px): the graph band inserted under
  *  an expanded row must match the DOM strip exactly, so it is one constant. */
-const INLINE_META_HEIGHT = 120
+const INLINE_META_HEIGHT = 192
 /** Initial commit window; "load more" grows it by this amount. */
 const LOAD_MORE_STEP = 200
 /** Diff line cap (the diff module's own default; rows beyond it are dropped). */
@@ -157,6 +157,22 @@ function groupFiles(files: DetailValue['files']): { dir: string; files: DetailVa
   return [...byDir.entries()]
     .sort((a, b) => (a[0] === '' ? -1 : b[0] === '' ? 1 : a[0] < b[0] ? -1 : 1))
     .map(([dir, list]) => ({ dir, files: list }))
+}
+
+/** Classify one raw unified-diff line for colouring. File-header lines are
+ *  checked before the generic +/- so `--- a/x` / `+++ b/x` are not mistaken
+ *  for additions/deletions. */
+function rawDiffLineClass(line: string): string {
+  if (line.startsWith('--- ') || line.startsWith('+++ ')) return 'dg-diff-line dg-diff-hdr'
+  if (line.startsWith('@@')) return 'dg-diff-line dg-diff-hunk'
+  if (line.startsWith('diff --git')
+    || line.startsWith('index ')
+    || line.startsWith('new file')
+    || line.startsWith('deleted file')
+    || line.startsWith('Binary files')) return 'dg-diff-line dg-diff-hdr'
+  if (line.startsWith('+')) return 'dg-diff-line dg-diff-add'
+  if (line.startsWith('-')) return 'dg-diff-line dg-diff-del'
+  return 'dg-diff-line dg-diff-same'
 }
 
 // ── Dialogs / menus ────────────────────────────────────────────────────────
@@ -276,6 +292,10 @@ export function CommitView(props: ViewProps): ReactNode {
   // Scroll restoration for "load more" (the new, longer list must not jump).
   const rowsRef = useRef<HTMLDivElement | null>(null)
   const restoreScroll = useRef<number | null>(null)
+
+  // Side-by-side diff panes: their horizontal scroll positions stay in sync.
+  const oldPaneRef = useRef<HTMLDivElement | null>(null)
+  const newPaneRef = useRef<HTMLDivElement | null>(null)
 
   // ── Data loading ─────────────────────────────────────────────────────────
 
@@ -527,20 +547,29 @@ export function CommitView(props: ViewProps): ReactNode {
 
   // ── Row interaction ──────────────────────────────────────────────────────
 
-  /** Clicking a row selects it and toggles its inline expansion (the
-   *  uncommitted pseudo-row can be selected but never expanded). */
+  /** Clicking a row selects it, toggles its inline expansion (the uncommitted
+   *  pseudo-row can be selected but never expanded) and opens the bottom
+   *  detail panel for that commit. */
   const toggleRow = useCallback((rowId: number): void => {
     setSelectedId(rowId)
     const isPseudo = commits[rowId]?.hash === '*'
     if (!isPseudo) setExpandedId((current) => (current === rowId ? null : rowId))
+    const commit = commits[rowId]
+    if (commit !== undefined && !isPseudo) {
+      setPanelOpen(true)
+      setPanelHash(commit.hash)
+    }
   }, [commits])
 
-  /** Select + expand the commit with the given hash (parent links). */
+  /** Select + expand the commit with the given hash (parent links), and open
+   *  its bottom detail panel. */
   const selectByHash = useCallback((hash: string): void => {
     const id = commits.findIndex((c) => c.hash === hash)
     if (id >= 0) {
       setSelectedId(id)
       setExpandedId(id)
+      setPanelOpen(true)
+      setPanelHash(hash)
     }
   }, [commits])
 
@@ -682,7 +711,6 @@ export function CommitView(props: ViewProps): ReactNode {
     const commit = commits[rowId]
     if (commit === undefined) return
     const items: MenuItem[] = [
-      { key: 'view-details', label: t('viewDetails'), onClick: () => { setPanelOpen(true); setPanelHash(commit.hash) } },
       { key: 'copy-hash', label: t('copyCommitHash'), onClick: () => copyText(commit.hash) },
       { key: 'copy-subject', label: t('copyCommitSubject'), onClick: () => copyText(commit.message) },
       ...(commit.hash !== '*'
@@ -992,16 +1020,6 @@ export function CommitView(props: ViewProps): ReactNode {
             `${meta.committer} <${meta.committerEmail}> ${formatDate(meta.committerDate, Math.round(Date.now() / 1000), dateFormat, t)}`,
           ),
           createElement('div', { key: 'body', className: 'dg-inline-body' }, meta.body),
-          createElement('button', {
-            key: 'open-panel',
-            className: 'dg-btn',
-            style: { marginTop: 4, alignSelf: 'flex-start' },
-            onClick: (event: ReactMouseEvent) => {
-              event.stopPropagation()
-              setPanelOpen(true)
-              setPanelHash(commit.hash)
-            },
-          }, t('viewDetails')),
         )
       }
       rowNodes.push(
@@ -1010,7 +1028,11 @@ export function CommitView(props: ViewProps): ReactNode {
           className: 'dg-inline-meta',
           style: { height: INLINE_META_HEIGHT },
         },
-          createElement('div', { className: 'dg-inline-meta-body' }, ...inlineBody),
+          // Transparent lane gutter (matches the rows' paddingLeft) so the
+          // swimlane lines stay visible through the expansion band; the panel
+          // itself starts right of the graph.
+          createElement('div', { key: 'gutter', className: 'dg-inline-meta-gutter', style: { width: layout.width + 10 } }),
+          createElement('div', { key: 'body', className: 'dg-inline-meta-body' }, ...inlineBody),
         ),
       )
     }
@@ -1074,10 +1096,17 @@ export function CommitView(props: ViewProps): ReactNode {
 
     let bodyNode: ReactNode
     if (panelMode === 'diff') {
-      // Raw commit diff mode (toggled on the panel head).
+      // Raw commit diff mode (toggled on the panel head): one coloured line
+      // per diff row — headers muted, hunk ranges tinted, additions/deletions
+      // with the same red/green treatment as the side-by-side panes.
+      const diffLines = panelDetail !== null ? panelDetail.diff.split('\n') : []
       bodyNode = createElement('div', { className: 'dg-detail-body' },
         panelDetail !== null
-          ? createElement('pre', { className: 'dg-body' }, panelDetail.diff)
+          ? createElement('div', { className: 'dg-raw-diff' },
+            diffLines.map((line, i) => createElement('div', {
+              key: `d-${i}`,
+              className: rawDiffLineClass(line),
+            }, line === '' ? '\u00a0' : line)))
           : createElement('div', { className: 'dg-loading' }, t('loading')),
       )
     } else {
@@ -1170,8 +1199,20 @@ export function CommitView(props: ViewProps): ReactNode {
             ),
             capped ? createElement('div', { className: 'dg-content-title' }, t('diffRowsTooLong', { n: rows.length })) : null,
             createElement('div', { className: 'dg-diff-body' },
-              createElement('div', { className: 'dg-diff-pane' }, ...oldPane),
-              createElement('div', { className: 'dg-diff-pane' }, ...newPane),
+              createElement('div', {
+                className: 'dg-diff-pane',
+                ref: oldPaneRef,
+                onScroll: () => {
+                  if (oldPaneRef.current !== null && newPaneRef.current !== null) newPaneRef.current.scrollLeft = oldPaneRef.current.scrollLeft
+                },
+              }, ...oldPane),
+              createElement('div', {
+                className: 'dg-diff-pane',
+                ref: newPaneRef,
+                onScroll: () => {
+                  if (oldPaneRef.current !== null && newPaneRef.current !== null) oldPaneRef.current.scrollLeft = newPaneRef.current.scrollLeft
+                },
+              }, ...newPane),
             ),
           ),
         )

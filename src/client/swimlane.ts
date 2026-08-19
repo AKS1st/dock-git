@@ -264,12 +264,15 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
  * expansion, returning a new array (the input is never mutated).
  *
  * The strip is inserted under row `index`, so everything at or below the
- * strip moves down by `height` px: a line that crosses the band (starts at or
- * above row `index` and ends at or below row `index + 1`) is split into two
- * segments — one ending at the upper boundary of the band, one resuming at
- * the lower boundary — preserving colour and committed flag; a line entirely
- * below the band is shifted down as a whole. All resulting coordinates are
- * non-negative.
+ * strip moves down by `height` px. A line that crosses the band (starts at or
+ * above row `index` and ends at or below row `index + 1`) is split into three
+ * segments — an approach ending at the upper boundary of the band, a vertical
+ * bridge straight through the band (so the lane stays visually continuous
+ * behind the expanded panel), and a continuation resuming at the lower
+ * boundary — preserving colour and committed flag; a line entirely below the
+ * band is shifted down as a whole. All resulting coordinates are
+ * non-negative; a zero-length continuation (the line already ended at the
+ * band's lower boundary) is dropped.
  */
 export function applyExpandToLines(lines: LayoutLine[], options: LayoutOptions): LayoutLine[] {
   const { index, height } = options
@@ -286,11 +289,20 @@ export function applyExpandToLines(lines: LayoutLine[], options: LayoutOptions):
         isCommitted: line.isCommitted,
       })
       out.push({
-        p1: { x: line.p2.x, y: bandBottom },
-        p2: { x: line.p2.x, y: line.p2.y + shift },
+        p1: { x: line.p2.x, y: bandTop },
+        p2: { x: line.p2.x, y: bandBottom },
         colourIndex: line.colourIndex,
         isCommitted: line.isCommitted,
       })
+      const resumedY = line.p2.y + shift
+      if (resumedY > bandBottom) {
+        out.push({
+          p1: { x: line.p2.x, y: bandBottom },
+          p2: { x: line.p2.x, y: resumedY },
+          colourIndex: line.colourIndex,
+          isCommitted: line.isCommitted,
+        })
+      }
     } else if (line.p1.y > index) {
       out.push({
         p1: { x: line.p1.x, y: line.p1.y + shift },

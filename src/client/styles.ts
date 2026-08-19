@@ -168,26 +168,34 @@ const CSS = `
   background: var(--dsw-alias-bg-layer-2, #ffffff);
 }
 
-/* Compact inline commit info shown right under its expanded row. */
+/* Compact inline commit info shown right under its expanded row. The lane
+   gutter stays transparent (the swimlane lines bridge through the band), and
+   the panel itself — background, borders — starts right of the graph. */
 .dg-inline-meta {
   box-sizing: border-box; /* total height matches INLINE_META_HEIGHT/expandY */
-  border-top: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
-  border-bottom: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
-  background: var(--dsw-alias-bg-layer-2, #ffffff);
   display: flex;
-  align-items: center;
+  align-items: stretch;
   overflow: hidden;
   flex-shrink: 0;
   font-size: 12px;
+}
+.dg-inline-meta-gutter {
+  flex: 0 0 auto;
+  height: 100%;
 }
 .dg-inline-meta-loading {
   color: var(--dsw-alias-label-secondary, #656d76);
   padding: 4px 10px;
 }
 .dg-inline-meta-body {
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 4px 10px;
-  width: 100%;
   overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2, #ffffff);
+  border-top: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
+  border-left: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
 }
 .dg-inline-body {
   white-space: pre-wrap;
@@ -430,6 +438,22 @@ const CSS = `
 }
 .dg-diff-same {
   /* context line — same as base; reserved for future styling hooks. */
+}
+
+/* Raw commit-diff mode: one coloured line per row, hunk ranges tinted. */
+.dg-raw-diff {
+  font-size: 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+  color: var(--dsw-alias-label-primary, #1f2328);
+}
+.dg-raw-diff .dg-diff-line { min-width: max-content; }
+.dg-diff-hunk {
+  background: rgba(9, 105, 218, 0.10);
+  color: #0969da;
+}
+.dg-diff-hdr {
+  color: var(--dsw-alias-label-secondary, #656d76);
 }
 
 .dg-err { color: #d1242f; font-size: 12px; padding: 8px 12px; }
@@ -779,6 +803,8 @@ body[data-ds-dark-theme] .dg-detail-resize:hover { background: #79c0ff; }
 body[data-ds-dark-theme] .dg-diff-add { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
 body[data-ds-dark-theme] .dg-diff-del { background: rgba(255, 123, 114, 0.15); color: #ff7b72; }
 body[data-ds-dark-theme] .dg-diff-empty { background: rgba(127, 127, 127, 0.10); }
+body[data-ds-dark-theme] .dg-diff-hunk { background: rgba(56, 139, 253, 0.14); color: #79c0ff; }
+body[data-ds-dark-theme] .dg-diff-hdr { color: var(--dsw-alias-label-secondary, #8b949e); }
 `
 
 export function mountStyles(): () => void {
