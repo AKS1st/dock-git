@@ -101,8 +101,8 @@ function buildSvgPaths(lines) {
     }
     if (p1.x === p2.x) d += `L${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
     else if (p1.y === p2.y) {
-      const dx = (p2.x - p1.x) * 0.4
-      d += `C${(p1.x + dx).toFixed(0)},${p1.y.toFixed(1)} ${(p2.x - dx).toFixed(0)},${p2.y.toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
+      const m = GRID.y * 0.4
+      d += `C${p1.x.toFixed(0)},${(p1.y + m).toFixed(1)} ${p2.x.toFixed(0)},${(p2.y - m).toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
     } else {
       const mid = GRID.y / 2
       d += `C${p1.x.toFixed(0)},${(p1.y + mid).toFixed(1)} ${p2.x.toFixed(0)},${(p2.y - mid).toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`

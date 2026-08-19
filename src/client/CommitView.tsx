@@ -629,9 +629,11 @@ export function CommitView(props: ViewProps): ReactNode {
       if (p1.x === p2.x) {
         d += `L${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
       } else if (p1.y === p2.y) {
-        // Same-row branch join: a gentle horizontal S that stays on the row.
-        const dx = (p2.x - p1.x) * 0.4
-        d += `C${(p1.x + dx).toFixed(0)},${p1.y.toFixed(1)} ${(p2.x - dx).toFixed(0)},${p2.y.toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
+        // Same-row branch join: a smooth S whose tangents at both ends are
+        // vertical, so it continues the incoming/outgoing lane lines without
+        // a corner; the control points stay a fraction of a row apart.
+        const m = GRID.y * 0.4
+        d += `C${p1.x.toFixed(0)},${(p1.y + m).toFixed(1)} ${p2.x.toFixed(0)},${(p2.y - m).toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
       } else {
         // Lane change over rows (defensive; the layout emits none): control
         // points at the middle of each row band keep the curve smooth.
@@ -935,12 +937,16 @@ export function CommitView(props: ViewProps): ReactNode {
     const isPseudo = commit.hash === '*'
 
     const refNodes: ReactNode[] = []
+    // Every ref badge is tinted with its commit's lane colour (text, border
+    // and a translucent fill) so badges and swimlane lines always match; the
+    // checked-out branch adds the emphasis ring via the dg-ref-active class.
+    const refStyle = { color: colour, borderColor: colour, background: `${colour}1f` }
     for (const headName of commit.heads) {
       const active = headName === branch
       refNodes.push(createElement('span', {
         key: `h-${headName}`,
         className: active ? 'dg-ref dg-ref-head dg-ref-active' : 'dg-ref dg-ref-head',
-        style: active ? { color: colour } : undefined,
+        style: refStyle,
         title: headName,
         onContextMenu: (event: ReactMouseEvent) => openBranchMenu(event, headName),
       }, headName))
@@ -949,6 +955,7 @@ export function CommitView(props: ViewProps): ReactNode {
       refNodes.push(createElement('span', {
         key: `r-${remote.name}`,
         className: 'dg-ref dg-ref-remote',
+        style: refStyle,
         title: remote.name,
         onContextMenu: (event: ReactMouseEvent) => openRemoteMenu(event, remote.name, remote.remote),
       }, remote.name))
@@ -957,6 +964,7 @@ export function CommitView(props: ViewProps): ReactNode {
       refNodes.push(createElement('span', {
         key: `t-${tag.name}`,
         className: 'dg-ref dg-ref-tag',
+        style: refStyle,
         title: tag.annotated ? `${tag.name} (annotated)` : tag.name,
         onContextMenu: (event: ReactMouseEvent) => openTagMenu(event, tag.name),
       }, tag.name))
