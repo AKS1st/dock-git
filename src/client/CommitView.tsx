@@ -599,10 +599,10 @@ export function CommitView(props: ViewProps): ReactNode {
 
   /** Same SVG path building as the preview script: consecutive segments with
    *  the same colour/committed state and a shared start point merge into one
-   *  path; lane changes are smooth curves inside the row band. */
+   *  path. Lane changes are gentle same-row S-curves (the layout never emits
+   *  long diagonals); vertical lanes are straight lines. */
   const buildSvgPaths = useCallback((lines: LayoutLine[]): { d: string; colourIndex: number; isCommitted: boolean }[] => {
     const paths: { d: string; colourIndex: number; isCommitted: boolean }[] = []
-    const u = GRID.y * 0.8
     let d = ''
     let curColour = -1
     let curCommitted = false
@@ -628,8 +628,15 @@ export function CommitView(props: ViewProps): ReactNode {
       }
       if (p1.x === p2.x) {
         d += `L${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
+      } else if (p1.y === p2.y) {
+        // Same-row branch join: a gentle horizontal S that stays on the row.
+        const dx = (p2.x - p1.x) * 0.4
+        d += `C${(p1.x + dx).toFixed(0)},${p1.y.toFixed(1)} ${(p2.x - dx).toFixed(0)},${p2.y.toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
       } else {
-        d += `C${p1.x.toFixed(0)},${(p1.y + u).toFixed(1)} ${p2.x.toFixed(0)},${(p2.y - u).toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
+        // Lane change over rows (defensive; the layout emits none): control
+        // points at the middle of each row band keep the curve smooth.
+        const mid = GRID.y / 2
+        d += `C${p1.x.toFixed(0)},${(p1.y + mid).toFixed(1)} ${p2.x.toFixed(0)},${(p2.y - mid).toFixed(1)} ${p2.x.toFixed(0)},${p2.y.toFixed(1)}`
       }
       lastX = p2.x
       lastY = p2.y

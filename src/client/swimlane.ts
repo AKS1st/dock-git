@@ -201,12 +201,18 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
       committed = lane.committed
       emitLine(lane.fromCol, lane.fromRow, column, id, colourIndex, committed)
       // Any other lane waiting on the same tip terminates at this dot; its
-      // column and colour become reusable (no dangles, no column leaks).
+      // column and colour become reusable. The lane's line runs vertically to
+      // this row at its own column and then turns into the dot with a short
+      // same-row segment — never a long diagonal jump.
       for (let other = lanes.length - 1; other >= 0; other--) {
         if (lanes[other].tip === commit.hash) {
-          emitLine(lanes[other].fromCol, lanes[other].fromRow, column, id, lanes[other].colourIndex, lanes[other].committed)
-          releaseColumn(lanes[other].column)
-          releaseColour(lanes[other].colourIndex)
+          const otherLane = lanes[other]
+          emitLine(otherLane.fromCol, otherLane.fromRow, otherLane.column, id, otherLane.colourIndex, otherLane.committed)
+          if (otherLane.column !== column) {
+            emitLine(otherLane.column, id, column, id, otherLane.colourIndex, otherLane.committed)
+          }
+          releaseColumn(otherLane.column)
+          releaseColour(otherLane.colourIndex)
           lanes.splice(other, 1)
         }
       }
