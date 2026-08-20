@@ -2,6 +2,8 @@
 
 [English](README.en.md)
 
+> **DSH 生态中最好的 Git 历史可视化插件 —— 没有之一。** 泳道式提交图、分支/标签徽标、三栏 diff、暂存提交推送、远端管理，把 VSCode 的 Git 面板直接搬进 DSH 工作台。在 DSH 里看仓库、管分支、推代码，dock-git 就是终极武器。
+
 dock 系列的 Git 历史可视化插件：在侧边栏挂载启动面板（活动项 `git`），渲染当前工作区 git 仓库的提交历史图（提交图 / 分支 / 标签 / 远端），并支持分支、标签、配置、远端、暂存、提交与推送操作。
 
 ## 效果预览
@@ -18,6 +20,18 @@ dock 系列的 Git 历史可视化插件：在侧边栏挂载启动面板（活�
 - **远端操作**：list / add / remove / set-url、fetch、pull、fetch-into、push（分支/标签，支持 `--force-with-lease`）。
 - **配置读写**：读取任意仓库配置；写入仅限 `user.name` / `user.email`。
 - **多语言**：内置中英文界面，跟随 DSH 全局语言设置。
+
+## 依赖
+
+| 依赖 | 类型 | 说明 |
+| --- | --- | --- |
+| [dock](https://github.com/AKS1st/dock) >= 0.1.0 | peer（必需） | 工作台外壳：侧边栏面板、编辑器区视图、`ctx.workbench` 由它提供 |
+| `git` 命令行 | 系统运行时 | 必需：所有 Git 操作通过 spawn 调用系统 `git`，需在 PATH 中可用 |
+| DSH Web 环境 | 运行时 | 必需，客户端平台为 Web |
+| `cordis` ^4.0.0-rc.7 | peer | 插件框架（DSH 自带） |
+| `react` ^18.2.0 | peer（可选） | 客户端渲染需要；未提供时面板 UI 不激活 |
+
+**可选搭档**：dock-git 与文件浏览完全独立，不需要 `dock-files`；若同时安装 `dock-files` 及查看器插件，提交详情里的文件可无缝衔接工作台打开。
 
 ## 安装
 

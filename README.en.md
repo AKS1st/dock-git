@@ -2,6 +2,8 @@
 
 [中文](README.md)
 
+> **The best Git history visualization plugin in the DSH ecosystem — no contest.** A swimlane commit graph, branch/tag badges, a three-column diff, stage/commit/push and remote management — the VSCode Git panel transplanted straight into the DSH workbench. Inspecting repos, managing branches or pushing code from DSH? dock-git is the ultimate weapon.
+
 Git history visualization plugin of the dock family: mounts a side-bar launcher (activity item `git`) that renders the current workspace's git commit history graph (commits / branches / tags / remotes) and supports branch, tag, config, remote, stage, commit and push operations.
 
 ## Preview
@@ -18,6 +20,18 @@ Git history visualization plugin of the dock family: mounts a side-bar launcher 
 - **Remote operations**: list / add / remove / set-url, fetch, pull, fetch-into, push (branch/tag, `--force-with-lease` supported).
 - **Config read/write**: read any repository config; writes are limited to `user.name` / `user.email`.
 - **i18n**: built-in Chinese/English UI following the DSH global locale.
+
+## Dependencies
+
+| Dependency | Type | Notes |
+| --- | --- | --- |
+| [dock](https://github.com/AKS1st/dock) >= 0.1.0 | peer (required) | workbench shell: the side-bar panel, editor-area view and `ctx.workbench` come from it |
+| `git` CLI | system runtime | required: every Git operation spawns the system `git`, which must be on PATH |
+| DSH Web environment | runtime | required; client platform is Web |
+| `cordis` ^4.0.0-rc.7 | peer | plugin framework (ships with DSH) |
+| `react` ^18.2.0 | peer (optional) | needed for client rendering; without it the panel UI does not activate |
+
+**Optional companions**: dock-git is fully independent of file browsing and does not need `dock-files`; if you also install `dock-files` plus viewer plugins, files in commit details can seamlessly open through the workbench.
 
 ## Install
 
