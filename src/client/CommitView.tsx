@@ -23,7 +23,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react'
-import type { ViewProps } from 'dock/client/contract'
+import type { ViewProps } from './contract.ts'
 import { useLocale, type T } from './hooks'
 import { translate } from './i18n'
 import { diffText } from './diff'
@@ -40,7 +40,7 @@ import {
 } from './swimlane'
 import type { StatusFile } from '../types'
 
-// ── Wire value shapes (mirror of the /wb-git endpoints, spec §4.4) ─────────
+// ── Wire value shapes (mirror of the /wb-git endpoints) ─────────
 
 /** One graph row sent by /wb-git/log: log record + merged ref decorations. */
 interface GraphCommit {

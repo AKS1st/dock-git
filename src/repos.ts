@@ -5,7 +5,7 @@
  * no Cordis, no ctx — so the host route layer (index.ts) and the host smoke
  * script share it.
  *
- * Rules (spec: docs/aegis/plans/2026-08-19-dock-git.md §多仓库支持):
+ * Rules (multi-repo support):
  *  - depth 0: cwd itself when inside a work tree (toplevel may be an ancestor).
  *  - depth 1/2: a subdirectory is listed only when it is its OWN repository
  *    root (rev-parse --show-toplevel === the directory itself).
