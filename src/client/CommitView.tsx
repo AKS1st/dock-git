@@ -1236,14 +1236,20 @@ export function CommitView(props: ViewProps): ReactNode {
                 className: 'dg-diff-pane',
                 ref: oldPaneRef,
                 onScroll: () => {
-                  if (oldPaneRef.current !== null && newPaneRef.current !== null) newPaneRef.current.scrollLeft = oldPaneRef.current.scrollLeft
+                  if (oldPaneRef.current !== null && newPaneRef.current !== null) {
+                    newPaneRef.current.scrollLeft = oldPaneRef.current.scrollLeft
+                    newPaneRef.current.scrollTop = oldPaneRef.current.scrollTop
+                  }
                 },
               }, ...oldPane),
               createElement('div', {
                 className: 'dg-diff-pane',
                 ref: newPaneRef,
                 onScroll: () => {
-                  if (oldPaneRef.current !== null && newPaneRef.current !== null) oldPaneRef.current.scrollLeft = newPaneRef.current.scrollLeft
+                  if (oldPaneRef.current !== null && newPaneRef.current !== null) {
+                    oldPaneRef.current.scrollLeft = newPaneRef.current.scrollLeft
+                    oldPaneRef.current.scrollTop = newPaneRef.current.scrollTop
+                  }
                 },
               }, ...newPane),
             ),

@@ -14,6 +14,10 @@ const CSS = `
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  /* The workbench's .dsh-wb-view wrapper adds 8px padding; keep the total
+     (padding included) at exactly the window body height so the floating
+     window never grows a global scrollbar. */
+  box-sizing: border-box;
   font-size: 13px;
   color: var(--dsw-alias-label-primary, #1f2328);
   overflow: hidden;
@@ -405,8 +409,10 @@ const CSS = `
 .dg-diff-pane {
   flex: 1 1 50%;
   min-width: 0;
+  /* Each pane scrolls both ways; the two panes' scroll positions are kept in
+     sync by the view (aligned diff rows must stay aligned). */
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
   border-right: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
 }
 .dg-diff-pane:last-child {
