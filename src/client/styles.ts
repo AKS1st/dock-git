@@ -425,14 +425,16 @@ const CSS = `
    (20px tall) and grows with max-content so the pane scrolls. */
 .dg-diff-line {
   display: block;
-  /* Fill the pane so the add/del background spans the whole row, not just the
-     text; long lines still overflow via min-width: max-content. */
-  width: 100%;
-  box-sizing: border-box;
+  /* The background follows the line's OWN content width — the whole line is
+     the text, never the pane: the panes scroll horizontally, so the pane
+     width is not the line's length. Long lines extend into the scroll
+     content; short lines end with their text. */
+  width: max-content;
+  min-width: max-content;
+  box-sizing: content-box;
   min-height: 20px;
   height: 20px;
   padding: 0 8px;
-  min-width: max-content;
   font-size: 12px;
   line-height: 20px;
   white-space: pre;
