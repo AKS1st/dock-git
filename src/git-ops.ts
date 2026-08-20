@@ -60,8 +60,13 @@ const DETAIL_FORMAT = ['%H', '%P', '%an', '%ae', '%at', '%cn', '%ce', '%ct', '%B
  *   "does not exist", "bad revision", "ambiguous argument"); the error also
  *   carries the stderr text, the exit code and the full stdout as properties,
  *   and the partial stdout is never swallowed.
+ * - `maxBytes` (optional) is a streaming output cap: once accumulated stdout
+ *   exceeds it the child is killed and the promise rejects with a dedicated
+ *   "output exceeds N bytes" error, so a pathological command (a commit that
+ *   adds a multi-GB file, a giant status listing) can never OOM the host
+ *   process. Post-hoc truncation in callers still applies within the cap.
  */
-export function runGit(cwd: string, args: string[]): Promise<string> {
+export function runGit(cwd: string, args: string[], maxBytes?: number): Promise<string> {
   const env: NodeJS.ProcessEnv = { ...process.env }
   delete env.GIT_DIR
   delete env.GIT_WORK_TREE
@@ -73,12 +78,24 @@ export function runGit(cwd: string, args: string[]): Promise<string> {
     const child = spawn('git', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
+    let overflow = false
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => { stdout += chunk })
+    child.stdout.on('data', (chunk: string) => {
+      if (maxBytes !== undefined && stdout.length + chunk.length > maxBytes) {
+        overflow = true
+        child.kill('SIGKILL')
+        return
+      }
+      stdout += chunk
+    })
     child.stderr.on('data', (chunk: string) => { stderr += chunk })
     child.on('error', reject)
     child.on('close', (code: number | null) => {
+      if (overflow) {
+        reject(new Error(`git output exceeds ${maxBytes} bytes`))
+        return
+      }
       if (code === 0) {
         resolve(stdout)
         return
@@ -225,6 +242,23 @@ export function buildCheckoutArgs(ref: string): string[] {
   return ['checkout', ref]
 }
 
+/**
+ * Switch to a branch or tag by name with `git switch`. Unlike `checkout`,
+ * `switch` never falls back to path semantics: a name that matches a tracked
+ * file (e.g. `src/index.ts`) cannot silently restore that file from the
+ * index and destroy working-tree changes. Callers must pass only refs that
+ * have been validated (REF_NAME_PATTERN) and, for safety, resolve to an
+ * existing branch/tag before calling.
+ */
+export function buildSwitchArgs(ref: string): string[] {
+  return ['switch', ref]
+}
+
+/** Detached switch to a commit hash (never path semantics). */
+export function buildSwitchDetachArgs(hash: string): string[] {
+  return ['switch', '--detach', hash]
+}
+
 // ── Fetch / pull / fetch-into (pinned by the smoke script) ─────────────────
 
 /** Fetch all remotes (`--all --prune`) or one named remote (`--prune`). */
@@ -282,9 +316,14 @@ export function buildStageResetArgs(path?: string): string[] {
   return path === undefined ? ['reset', 'HEAD', '--'] : ['reset', 'HEAD', path]
 }
 
-/** Commit with `message` as one argument vector element (newlines stay safe). */
+/**
+ * Commit with `message` as one argument vector element (newlines stay safe).
+ * `--no-verify` skips pre-commit/commit-msg hooks: the /wb-git API is
+ * browser-trust fenced, so hooks are not run on its behalf (a malicious
+ * config value or a repo with hostile hooks must not execute on commit).
+ */
 export function buildCommitArgs(message: string): string[] {
-  return ['commit', '-m', message]
+  return ['commit', '--no-verify', '-m', message]
 }
 
 // ── Parsers ─────────────────────────────────────────────────────────────────
