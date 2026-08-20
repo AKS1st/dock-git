@@ -1,9 +1,12 @@
 {
   "name": "dock-git",
   "version": "0.1.0",
-  "description": "Git history visualization plugin for DSH dock: mounts a side-bar panel (activity item 'git') that renders the current workspace's git commit history graph.",
+  "description": "Git history viewer for the DSH dock: browse the commit graph, branches, tags and remotes; stage, commit, push and manage repository settings.",
   "type": "module",
-  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AKS1st/dock-git.git"
+  },
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
   "exports": {
@@ -26,9 +29,25 @@
     "lib",
     "cordis.patch.yml"
   ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "dsh-plugin",
+    "web-ui",
+    "git",
+    "history",
+    "graph",
+    "dock"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json && tsdown -c tsdown.config.mjs",
-    "check": "tsc -p tsconfig.json --noEmit --pretty false"
+    "check": "tsc -p tsconfig.json --noEmit --pretty false",
+    "test": "node scripts/smoke-host.mjs && node scripts/smoke-diff.mjs && node scripts/smoke-i18n.mjs && node scripts/smoke-layout.mjs"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
   },
   "peerDependencies": {
     "cordis": "^4.0.0-rc.7",
@@ -47,11 +66,9 @@
     "@types/node": "^22.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "dock": "link:/home/zero/AgentX/plugins/dock",
     "tsdown": "^0.22.14",
-    "typescript": "^6.0.3"
-  },
-  "engines": {
-    "node": ">=20"
+    "typescript": "^6.0.3",
+    "cordis": "^4.0.0-rc.7",
+    "playwright": "^1.62.1"
   }
 }
