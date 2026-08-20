@@ -4,7 +4,7 @@
  * scripts/smoke-i18n.mjs can run it standalone; the React glue lives here.
  */
 import { useEffect, useState } from 'react'
-import type { WorkbenchContext } from 'dock/client/contract'
+import type { WorkbenchContext } from './contract.ts'
 import { detectLocale, type LocaleId } from './i18n'
 
 /** Translate bound to one locale: (key, params?) → string. */

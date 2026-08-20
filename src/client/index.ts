@@ -7,7 +7,7 @@
  *
  * Registration and optional-peer-guard patterns follow dock-files.
  */
-import type { IconSpec, WorkbenchContext, WorkbenchService } from 'dock/client/contract'
+import type { IconSpec, WorkbenchContext, WorkbenchService } from './contract.ts'
 import { GRAPH_VIEW_ID } from './constants'
 import { CommitView } from './CommitView'
 import { GitLauncher } from './GitLauncher'

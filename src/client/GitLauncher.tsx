@@ -14,7 +14,7 @@
  * with a hint / error + retry.
  */
 import { createElement, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ViewProps, WorkbenchContext, WorkbenchService } from 'dock/client/contract'
+import type { ViewProps, WorkbenchContext, WorkbenchService } from './contract.ts'
 import { GRAPH_VIEW_ID } from './constants'
 import { useLocale, type T } from './hooks'
 import { translate } from './i18n'
