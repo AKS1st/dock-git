@@ -421,17 +421,21 @@ const CSS = `
 .dg-diff-pane:last-child {
   border-right: none;
 }
-/* A single content line within a pane.  Each row is one diff line
-   (20px tall) and grows with max-content so the pane scrolls. */
+/* The lines wrapper spans the pane (min-width 100%) and grows to the widest
+   line, so every line's background extends to the same right edge — the full
+   scroll content, not the visible pane and not the text. */
+.dg-diff-lines {
+  display: inline-block;
+  min-width: 100%;
+  vertical-align: top;
+}
+/* A single content line within a pane. Each row is one diff line (20px tall)
+   and fills the wrapper: the background covers the whole line area (to the
+   widest line's right edge), scrolling with the content. */
 .dg-diff-line {
   display: block;
-  /* The background follows the line's OWN content width — the whole line is
-     the text, never the pane: the panes scroll horizontally, so the pane
-     width is not the line's length. Long lines extend into the scroll
-     content; short lines end with their text. */
-  width: max-content;
-  min-width: max-content;
-  box-sizing: content-box;
+  width: 100%;
+  box-sizing: border-box;
   min-height: 20px;
   height: 20px;
   padding: 0 8px;

@@ -1244,7 +1244,12 @@ export function CommitView(props: ViewProps): ReactNode {
                     newPaneRef.current.scrollTop = oldPaneRef.current.scrollTop
                   }
                 },
-              }, ...oldPane),
+              },
+                // The lines wrapper spans the full scroll content (the widest
+                // line), so every line's background extends to the same right
+                // edge — full-row highlighting that scrolls with the content.
+                createElement('div', { className: 'dg-diff-lines' }, ...oldPane),
+              ),
               createElement('div', {
                 className: 'dg-diff-pane',
                 ref: newPaneRef,
@@ -1254,7 +1259,9 @@ export function CommitView(props: ViewProps): ReactNode {
                     oldPaneRef.current.scrollTop = newPaneRef.current.scrollTop
                   }
                 },
-              }, ...newPane),
+              },
+                createElement('div', { className: 'dg-diff-lines' }, ...newPane),
+              ),
             ),
           ),
         )
