@@ -144,6 +144,20 @@ function formatDate(date: number, now: number, format: DateFormat, t: T): string
   return format === 'absolute' ? absoluteDate(date) : relativeDate(date, now, t)
 }
 
+/** Stable colour for a ref (local branch, remote branch or tag) derived from
+ *  its name: the same ref always gets the same palette colour (consistent
+ *  across commits and sessions), and distinct refs spread across the palette.
+ *  The lane colours the graph lines use are separate — the badge colour
+ *  identifies the ref itself, not the commit it sits on. */
+function refColour(name: string): string {
+  let h = 2166136261
+  for (let i = 0; i < name.length; i++) {
+    h ^= name.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return COLOURS[(h >>> 0) % COLOURS.length]
+}
+
 /** Group the changed files of a commit by directory ('' = repository root). */
 function groupFiles(files: DetailValue['files']): { dir: string; files: DetailValue['files'] }[] {
   const byDir = new Map<string, DetailValue['files']>()
@@ -934,20 +948,23 @@ export function CommitView(props: ViewProps): ReactNode {
     const commit = commits[row.id]
     if (commit === undefined) continue
     const dot = dotPosition(row)
-    const colour = row.isCommitted ? COLOURS[row.colourIndex] : '#808080'
     const isPseudo = commit.hash === '*'
 
     const refNodes: ReactNode[] = []
-    // Every ref badge is tinted with its commit's lane colour (text, border
-    // and a translucent fill) so badges and swimlane lines always match; the
-    // checked-out branch adds the emphasis ring via the dg-ref-active class.
-    const refStyle = { color: colour, borderColor: colour, background: `${colour}1f` }
+    // Each ref badge is tinted with its OWN stable colour (text, border and a
+    // translucent fill derived from the name), so several refs on the same
+    // commit stay distinguishable; the checked-out branch adds the emphasis
+    // ring via the dg-ref-active class.
+    const refStyle = (name: string): { color: string; borderColor: string; background: string } => {
+      const c = refColour(name)
+      return { color: c, borderColor: c, background: `${c}1f` }
+    }
     for (const headName of commit.heads) {
       const active = headName === branch
       refNodes.push(createElement('span', {
         key: `h-${headName}`,
         className: active ? 'dg-ref dg-ref-head dg-ref-active' : 'dg-ref dg-ref-head',
-        style: refStyle,
+        style: refStyle(headName),
         title: headName,
         onContextMenu: (event: ReactMouseEvent) => openBranchMenu(event, headName),
       }, headName))
@@ -956,7 +973,7 @@ export function CommitView(props: ViewProps): ReactNode {
       refNodes.push(createElement('span', {
         key: `r-${remote.name}`,
         className: 'dg-ref dg-ref-remote',
-        style: refStyle,
+        style: refStyle(remote.name),
         title: remote.name,
         onContextMenu: (event: ReactMouseEvent) => openRemoteMenu(event, remote.name, remote.remote),
       }, remote.name))
@@ -965,7 +982,7 @@ export function CommitView(props: ViewProps): ReactNode {
       refNodes.push(createElement('span', {
         key: `t-${tag.name}`,
         className: 'dg-ref dg-ref-tag',
-        style: refStyle,
+        style: refStyle(tag.name),
         title: tag.annotated ? `${tag.name} (annotated)` : tag.name,
         onContextMenu: (event: ReactMouseEvent) => openTagMenu(event, tag.name),
       }, tag.name))
