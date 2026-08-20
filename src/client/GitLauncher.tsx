@@ -113,7 +113,6 @@ export function GitLauncher(props: ViewProps): ReactNode {
   }
   if (error !== null) {
     return createElement('div', { className: 'dsh-wb-view dg-repo-list' },
-      createElement('div', { className: 'dg-repo-list-title' }, t('repoSelectorTitle')),
       createElement('div', { className: 'dg-err' }, `${t('error')}: ${error}`),
       createElement('button', {
         className: 'dg-btn',
@@ -124,7 +123,6 @@ export function GitLauncher(props: ViewProps): ReactNode {
   }
   if (repos === null) {
     return createElement('div', { className: 'dsh-wb-view dg-repo-list' },
-      createElement('div', { className: 'dg-repo-list-title' }, t('repoSelectorTitle')),
       createElement('div', { className: 'dg-loading' }, loading ? t('loading') : '…'),
     )
   }
@@ -138,13 +136,15 @@ export function GitLauncher(props: ViewProps): ReactNode {
     },
       createElement('div', { className: 'dg-repo-item-top' },
         createElement('span', { className: 'dg-repo-name' }, repo.name),
-        createElement('span', { className: 'dg-repo-depth', title: t('openRepo') }, depthLabel(repo.depth, t)),
+        createElement('span', {
+          className: `dg-repo-depth dg-repo-depth-${Math.min(repo.depth, 2)}`,
+          title: t('openRepo'),
+        }, depthLabel(repo.depth, t)),
       ),
       createElement('div', { className: 'dg-repo-path', title: repo.root }, repo.root),
     ))
 
   return createElement('div', { className: 'dsh-wb-view dg-repo-list' },
-    createElement('div', { className: 'dg-repo-list-title' }, t('repoSelectorTitle')),
     repos.length > 0 ? createElement('div', { className: 'dg-repo-list-hint' }, t('repoListHint')) : null,
     repos.length === 0
       ? createElement('div', { className: 'dg-repo-empty' },

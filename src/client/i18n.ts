@@ -164,7 +164,7 @@ export const DICTS: Record<LocaleId, Dict> = {
     confirmRemoveRemote: '确定要移除远程仓库 {name}?',
 
     // ── Launcher repo selector (multi-repo workspaces) ──────────────────
-    repoSelectorTitle: 'Git 仓库',
+    repoSelectorTitle: 'git仓库列表',
     repoListHint: '选择要查看的仓库',
     noReposFound: '未找到 git 仓库',
     depthWorkspace: '工作区',

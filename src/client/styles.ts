@@ -495,14 +495,6 @@ const CSS = `
   gap: 2px;
   min-height: 0;
 }
-.dg-repo-list-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-secondary, #656d76);
-  padding: 4px 2px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
 .dg-repo-list-hint {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary, #656d76);
@@ -547,6 +539,27 @@ const CSS = `
   color: var(--dsw-alias-link-primary, #0969da);
   background: rgba(9, 105, 218, 0.08);
 }
+/* Depth colour coding: the workspace repo (0), subdirectories (1) and nested
+   (grandchild) repos (2+) are each tinted differently so nesting level is
+   readable at a glance. */
+.dg-repo-depth-0 {
+  border-color: #0969da;
+  color: #0969da;
+  background: rgba(9, 105, 218, 0.10);
+}
+.dg-repo-depth-1 {
+  border-color: #1a7f37;
+  color: #1a7f37;
+  background: rgba(26, 127, 55, 0.10);
+}
+.dg-repo-depth-2 {
+  border-color: #e16f24;
+  color: #e16f24;
+  background: rgba(225, 111, 36, 0.10);
+}
+body[data-ds-dark-theme] .dg-repo-depth-0 { border-color: #58a6ff; color: #58a6ff; background: rgba(88, 166, 255, 0.14); }
+body[data-ds-dark-theme] .dg-repo-depth-1 { border-color: #3fb950; color: #3fb950; background: rgba(63, 185, 80, 0.14); }
+body[data-ds-dark-theme] .dg-repo-depth-2 { border-color: #f0883e; color: #f0883e; background: rgba(240, 136, 62, 0.14); }
 .dg-repo-empty {
   padding: 12px 2px;
   font-size: 13px;

@@ -11,6 +11,7 @@ import type { IconSpec, WorkbenchContext, WorkbenchService } from './contract.ts
 import { GRAPH_VIEW_ID } from './constants'
 import { CommitView } from './CommitView'
 import { GitLauncher } from './GitLauncher'
+import { detectLocale, translate } from './i18n'
 import { mountStyles } from './styles'
 
 /** Requires the workbench base to be mounted. */
@@ -42,10 +43,12 @@ export function apply(ctx: WorkbenchContext): void {
 
   // The side-bar pane — a slim launcher (the graph itself lives in the
   // floating 'git-history' window: the side bar is too narrow for the graph).
+  // The panel title is the repo list's own name, shown once by the dock's
+  // sidebar header (the launcher renders no duplicate title).
   ctx.effect(() => workbench.registerPanel({
     id: 'git',
     region: 'sideBar',
-    title: 'Git History',
+    title: () => translate(detectLocale(ctx), 'repoSelectorTitle'),
     icon: GIT_ICON,
     order: 20,
     component: GitLauncher,
