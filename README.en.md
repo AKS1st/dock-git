@@ -4,6 +4,10 @@
 
 Git history visualization plugin of the dock family: mounts a side-bar launcher (activity item `git`) that renders the current workspace's git commit history graph (commits / branches / tags / remotes) and supports branch, tag, config, remote, stage, commit and push operations.
 
+## Preview
+
+![dock-git commit history graph (English UI)](assets/main-gui-en.png)
+
 ## Features
 
 - **Commit history graph**: swimlane graph with branch/tag/remote badge glyphs and an "uncommitted changes" node; N+1 probe for "more commits".
