@@ -195,7 +195,10 @@ const CSS = `
   flex: 1 1 auto;
   min-width: 0;
   padding: 4px 10px;
-  overflow: hidden;
+  /* The whole strip scrolls when its content is taller than the strip, so
+     nothing becomes unreachable; horizontal stays hidden (rows wrap). */
+  overflow-y: auto;
+  overflow-x: hidden;
   background: var(--dsw-alias-bg-layer-2, #ffffff);
   border-top: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
   border-bottom: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
@@ -205,7 +208,7 @@ const CSS = `
   white-space: pre-wrap;
   font-size: 12px;
   margin: 2px 0 0;
-  max-height: 44px;
+  max-height: 96px;
   overflow-y: auto;
   /* pre-wrap wraps normal lines; hide the rare unbreakable-token scrollbar. */
   overflow-x: hidden;
@@ -810,9 +813,10 @@ body[data-ds-dark-theme] .dg-menu-item-danger:hover { background: rgba(255, 123,
 body[data-ds-dark-theme] .dg-commit-error { color: #ff7b72; }
 body[data-ds-dark-theme] .dg-detail-resize:hover { background: #79c0ff; }
 
-/* Dark theme: side-by-side diff colours. */
-body[data-ds-dark-theme] .dg-diff-add { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
-body[data-ds-dark-theme] .dg-diff-del { background: rgba(255, 123, 114, 0.15); color: #ff7b72; }
+/* Dark theme: side-by-side diff colours. The full-row backgrounds must stay
+   clearly visible on dark — higher opacity than the light theme's tints. */
+body[data-ds-dark-theme] .dg-diff-add { background: rgba(63, 185, 80, 0.28); color: #3fb950; }
+body[data-ds-dark-theme] .dg-diff-del { background: rgba(255, 123, 114, 0.28); color: #ff7b72; }
 body[data-ds-dark-theme] .dg-diff-empty { background: rgba(127, 127, 127, 0.10); }
 body[data-ds-dark-theme] .dg-diff-hunk { background: rgba(56, 139, 253, 0.14); color: #79c0ff; }
 body[data-ds-dark-theme] .dg-diff-hdr { color: var(--dsw-alias-label-secondary, #8b949e); }
