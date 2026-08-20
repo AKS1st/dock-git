@@ -158,6 +158,30 @@ function refColour(name: string): string {
   return COLOURS[(h >>> 0) % COLOURS.length]
 }
 
+/** Lucide-style icon paths per ref kind, drawn with currentColor so the icon
+ *  inherits the badge's tint. Gives branches, remotes and tags distinct
+ *  shapes even when several sit on the same commit. */
+const REF_ICON: Record<'head' | 'remote' | 'tag', string[]> = {
+  head: ['M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9'],
+  remote: ['M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4'],
+  tag: ['M12 2H2v10l9.29 9.29a1 1 0 0 0 1.42 0l8.58-8.58a1 1 0 0 0 0-1.42z', 'M7 7h.01'],
+}
+
+function refIcon(kind: 'head' | 'remote' | 'tag'): ReactNode {
+  return createElement('svg', {
+    className: 'dg-ref-icon',
+    width: 11,
+    height: 11,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2.2,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+  }, REF_ICON[kind].map((d, i) => createElement('path', { key: i, d })))
+}
+
 /** Group the changed files of a commit by directory ('' = repository root). */
 function groupFiles(files: DetailValue['files']): { dir: string; files: DetailValue['files'] }[] {
   const byDir = new Map<string, DetailValue['files']>()
@@ -971,7 +995,7 @@ export function CommitView(props: ViewProps): ReactNode {
         style: refStyle(headName),
         title: headName,
         onContextMenu: (event: ReactMouseEvent) => openBranchMenu(event, headName),
-      }, headName))
+      }, refIcon('head'), headName))
     }
     for (const remote of commit.remotes) {
       refNodes.push(createElement('span', {
@@ -980,7 +1004,7 @@ export function CommitView(props: ViewProps): ReactNode {
         style: refStyle(remote.name),
         title: remote.name,
         onContextMenu: (event: ReactMouseEvent) => openRemoteMenu(event, remote.name, remote.remote),
-      }, remote.name))
+      }, refIcon('remote'), remote.name))
     }
     for (const tag of commit.tags) {
       refNodes.push(createElement('span', {
@@ -989,7 +1013,7 @@ export function CommitView(props: ViewProps): ReactNode {
         style: refStyle(tag.name),
         title: tag.annotated ? `${tag.name} (annotated)` : tag.name,
         onContextMenu: (event: ReactMouseEvent) => openTagMenu(event, tag.name),
-      }, tag.name))
+      }, refIcon('tag'), tag.name))
     }
 
     const rowClass = `dg-row${row.id === selectedId ? ' dg-row-selected' : ''}${isPseudo ? ' dg-uncommitted' : ''}`

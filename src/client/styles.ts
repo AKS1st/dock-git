@@ -130,7 +130,9 @@ const CSS = `
 
 /* Ref chips (DSH-themed). */
 .dg-ref {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   height: 18px;
   line-height: 18px;
   margin: 2px 5px 0 0;
@@ -145,6 +147,10 @@ const CSS = `
   max-width: 160px;
   vertical-align: top;
   flex-shrink: 0;
+}
+.dg-ref-icon {
+  flex: none;
+  opacity: 0.85;
 }
 .dg-ref-head { border-color: #1a7f37; color: #1a7f37; background: rgba(26, 127, 55, 0.12); }
 .dg-ref-remote { border-color: #8250df; color: #8250df; background: rgba(130, 80, 223, 0.12); }
