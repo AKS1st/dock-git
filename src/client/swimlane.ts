@@ -124,9 +124,9 @@ interface Lane {
   fromCol: number
   /** False when the lane originates from the uncommitted pseudo-row. */
   committed: boolean
-  /** The lowest row (grid) at which a merge's reuse connection joins this
-   *  lane; the lane's drawn vertical must cover at least this row. */
-  reuseArrival: number
+  /** Merging dots (column, row) that joined this lane; their join lines are
+   *  emitted at claim time, when the lane's drawn vertical extent is known. */
+  reuses: { col: number; row: number }[]
 }
 
 /**
@@ -206,6 +206,12 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
       colourIndex = lane.colourIndex
       committed = lane.committed
       emitLine(lane.fromCol, lane.fromRow, column, id, colourIndex, committed)
+      // Joining dots (merges that reused this lane) connect to the lane's
+      // vertical just below their own row — the vertical covers every row up
+      // to the claim, so each join line lands on it.
+      for (const r of lane.reuses) {
+        if (r.col !== column) emitLine(r.col, r.row, column, r.row + 1, colourIndex, committed)
+      }
       // Any other lane waiting on the same tip terminates at this dot; its
       // column and colour become reusable. The lane's line runs vertically to
       // the row(s) ABOVE the dot, then sweeps across the band(s) into the dot —
@@ -216,11 +222,25 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
         if (lanes[other].tip === commit.hash) {
           const otherLane = lanes[other]
           if (id > 0) {
-            const span = Math.max(1, Math.ceil(Math.abs(column - otherLane.column) / 2))
-            // The vertical must cover every merge-reuse arrival row too, or
-            // those connections would land below the drawn line.
-            const turnRow = Math.max(otherLane.fromRow, id - span, otherLane.reuseArrival)
+            // Route the lane as a vertical run followed by a SHORT turn: the
+            // turn spans at most 2 bands (never a long direct curve between
+            // the source dot and the target dot). The vertical must reach the
+            // join rows of every merging dot that reused this lane.
+            const span = Math.max(1, Math.min(2, Math.ceil(Math.abs(column - otherLane.column) / 2)))
+            const maxReuseArrival = otherLane.reuses.reduce((m, r) => Math.max(m, r.row + 1), 0)
+            const turnRow = Math.min(id - 1, Math.max(otherLane.fromRow + 1, id - span, maxReuseArrival))
             emitLine(otherLane.fromCol, otherLane.fromRow, otherLane.column, turnRow, otherLane.colourIndex, otherLane.committed)
+            // Join lines that land on the drawn vertical connect to the lane;
+            // one that would fall on the dot's own row connects straight to the
+            // dot instead (a short single-band curve, never a dangling end).
+            for (const r of otherLane.reuses) {
+              if (r.col === otherLane.column) continue
+              if (r.row + 1 <= turnRow) {
+                emitLine(r.col, r.row, otherLane.column, r.row + 1, otherLane.colourIndex, otherLane.committed)
+              } else {
+                emitLine(r.col, r.row, column, id, otherLane.colourIndex, otherLane.committed)
+              }
+            }
             if (otherLane.column !== column) {
               emitLine(otherLane.column, turnRow, column, id, otherLane.colourIndex, otherLane.committed)
             }
@@ -253,7 +273,7 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
 
     if (commit.parents.length > 0) {
       // First parent keeps this lane (same column and colour).
-      lanes.push({ column, colourIndex, tip: commit.parents[0], fromRow: id, fromCol: column, committed: !isPseudo, reuseArrival: 0 })
+      lanes.push({ column, colourIndex, tip: commit.parents[0], fromRow: id, fromCol: column, committed: !isPseudo, reuses: [] })
       // Each additional parent either joins an already-open lane (one column
       // per branch chain, no matter how many merges feed it) or opens a fresh
       // lane on a new column. In both cases the connection sweeps across the
@@ -264,11 +284,10 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
         const existing = lanes.findIndex((l) => l.tip === parent)
         if (existing >= 0) {
           const lane = lanes[existing]
-          if (lane.column !== column) {
-            emitLine(column, id, lane.column, id + 1, lane.colourIndex, lane.committed)
-            // The lane's drawn vertical must reach this arrival row.
-            lane.reuseArrival = Math.max(lane.reuseArrival, id + 1)
-          }
+          // Join an already-open lane: record this dot; the join line is
+          // emitted at claim time (its landing row depends on the lane's
+          // drawn vertical extent, unknown until then).
+          if (lane.column !== column) lane.reuses.push({ col: column, row: id })
         } else {
           const extraColumn = takeColumn()
           const extraColour = takeColour()
@@ -277,7 +296,7 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
           // id + 1) can never overshoot it — a fixed span keeps every line
           // flowing downward, at the cost of a flatter sweep for wide jumps.
           if (extraColumn !== column) emitLine(column, id, extraColumn, id + 1, extraColour, !isPseudo)
-          lanes.push({ column: extraColumn, colourIndex: extraColour, tip: parent, fromRow: id + 1, fromCol: extraColumn, committed: !isPseudo, reuseArrival: 0 })
+          lanes.push({ column: extraColumn, colourIndex: extraColour, tip: parent, fromRow: id + 1, fromCol: extraColumn, committed: !isPseudo, reuses: [] })
         }
       }
     } else {
@@ -288,10 +307,14 @@ export function layoutGraph(commits: LayoutCommit[], headHash?: string | null, o
   }
 
   // Open lines: lanes whose tip never appears among the loaded commits extend
-  // to the bottom edge of the graph (the graph reads as continuing below).
+  // to the bottom edge of the graph (the graph reads as continuing below);
+  // their joining dots connect just below their own row, on the open vertical.
   const bottom = commits.length
   for (const lane of lanes) {
     emitLine(lane.fromCol, lane.fromRow, lane.column, bottom, lane.colourIndex, lane.committed)
+    for (const r of lane.reuses) {
+      if (r.col !== lane.column) emitLine(r.col, r.row, lane.column, r.row + 1, lane.colourIndex, lane.committed)
+    }
   }
 
   let maxColumn = 0
