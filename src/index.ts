@@ -14,6 +14,7 @@
  */
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import { realpath, stat } from 'node:fs/promises'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   buildBranchArgs,
   buildCheckoutArgs,
@@ -41,6 +42,8 @@ import {
   buildStageAddArgs,
   buildStageResetArgs,
   buildStatusFilesArgs,
+  buildSwitchArgs,
+  buildSwitchDetachArgs,
   parseBranches,
   parseCommitDetail,
   parseGitLog,
@@ -83,6 +86,8 @@ export {
   buildCreateTagArgs,
   buildDeleteTagArgs,
   buildCheckoutArgs,
+  buildSwitchArgs,
+  buildSwitchDetachArgs,
   buildFetchArgs,
   buildPullArgs,
   buildFetchIntoArgs,
@@ -133,6 +138,7 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   }
   const text = Buffer.concat(chunks).toString('utf8')
   if (text.trim() === '') return {}
+  if (text.includes('\u0000')) throw new WbError('bad-request', 'request body must not contain NUL bytes')
   try {
     return JSON.parse(text) as unknown
   } catch {
@@ -263,33 +269,43 @@ async function withGitError<T>(label: string, fn: () => Promise<T>): Promise<T> 
 
 /**
  * Parse and validate the optional `repoRoot` payload field. When provided it
- * must be a non-empty absolute path (`/`-prefixed or a Windows drive letter)
- * to an existing directory, otherwise 400 bad-request. Returns the canonical
- * (symlink-resolved) path, or undefined when absent (endpoints then fall back
- * to the session cwd). repoRoot is the repository root itself — git runs
- * there directly, no upward lookup. A repoRoot that is not a repository is
- * handled per endpoint: /config rejects it up front with fs-error (work-tree
- * guard), /log reports isRepo:false, and the remaining endpoints surface the
- * failing git command as an fs-error.
+ * must be a non-empty absolute path (`/`-prefix or a Windows drive letter)
+ * to an existing directory, otherwise 400 bad-request. It must also lie
+ * inside the session workspace (the canonical session cwd or a descendant),
+ * otherwise 403 forbidden — a browser-trusted request must not run git in
+ * arbitrary repositories outside the conversation's workspace. Returns the
+ * canonical (symlink-resolved) path, or undefined when absent (endpoints
+ * then fall back to the session cwd). repoRoot is the repository root
+ * itself — git runs there directly, no upward lookup. A repoRoot that is
+ * not a repository is handled per endpoint: /config rejects it up front
+ * with fs-error (work-tree guard), /log reports isRepo:false, and the
+ * remaining endpoints surface the failing git command as an fs-error.
  */
-async function repoRootOf(payload: unknown): Promise<string | undefined> {
+async function repoRootOf(payload: unknown, ctx: WbContext, sessionId: string | undefined): Promise<string | undefined> {
   const raw = stringOrUndefined(payload, 'repoRoot')
   if (raw === undefined) return undefined
   if (!raw.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(raw)) {
     throw new WbError('bad-request', 'repoRoot must be an absolute path')
   }
+  let info
   try {
-    const info = await stat(raw)
-    if (!info.isDirectory()) {
-      throw new WbError('bad-request', `repoRoot is not a directory: "${raw}"`)
-    }
-    // Canonical spelling so root fields always match the real on-disk path
-    // (git reports realpaths too, e.g. through symlinked session dirs).
-    return await realpath(raw)
-  } catch (error) {
-    if (error instanceof WbError) throw error
+    info = await stat(raw)
+  } catch {
     throw new WbError('bad-request', `repoRoot directory not found: "${raw}"`)
   }
+  if (!info.isDirectory()) {
+    throw new WbError('bad-request', `repoRoot is not a directory: "${raw}"`)
+  }
+  // Canonical spelling so root fields always match the real on-disk path
+  // (git reports realpaths too, e.g. through symlinked session dirs).
+  const root = await realpath(raw)
+  const cwd = sessionCwdOf(ctx, sessionId)
+  const workspace = await realpath(cwd).catch(() => resolve(cwd))
+  const rel = relative(workspace, root)
+  if (rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))) {
+    return root
+  }
+  throw new WbError('forbidden', `repoRoot is outside the session workspace: "${raw}"`, 403)
 }
 
 // ── Endpoints ──────────────────────────────────────────────────────────────
@@ -313,7 +329,7 @@ function dedupeTags(tags: { name: string; annotated: boolean }[]): { name: strin
 
 async function endpointStatus(ctx: WbContext, payload: unknown): Promise<unknown> {
   const sessionId = stringOrUndefined(payload, 'sessionId')
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const cwd = repoRoot ?? sessionCwdOf(ctx, sessionId)
   let isRepo = false
   try {
@@ -392,7 +408,7 @@ async function endpointLog(ctx: WbContext, payload: unknown): Promise<unknown> {
   const showRemote = raw?.['showRemote'] !== false
 
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   let root: string
   if (repoRoot !== undefined) {
     // repoRoot is the repository root: run git there directly (no upward lookup).
@@ -433,7 +449,7 @@ async function endpointLog(ctx: WbContext, payload: unknown): Promise<unknown> {
   }
 
   // N+1 probe: one extra row tells the client whether more commits exist.
-  const parsed = parseGitLog(await withGitError('log', () => runGit(root, buildLogArgs(maxCommits + 1, { branches, showRemote }))))
+  const parsed = parseGitLog(await withGitError('log', () => runGit(root, buildLogArgs(maxCommits + 1, { branches, showRemote }), 8 * 1024 * 1024)))
   let more = false
   if (parsed.length > maxCommits) {
     more = true
@@ -456,7 +472,7 @@ async function endpointLog(ctx: WbContext, payload: unknown): Promise<unknown> {
   if (head !== null && commits.some((c) => c.hash === head)) {
     let uncommitted = 0
     try {
-      const statusOut = await runGit(root, ['status', '--porcelain', '--untracked-files=all'])
+      const statusOut = await runGit(root, ['status', '--porcelain', '--untracked-files=all'], 8 * 1024 * 1024)
       uncommitted = statusOut.trim() === '' ? 0 : statusOut.split(/\r\n|\r|\n/g).filter((line) => line !== '').length
     } catch {
       uncommitted = 0
@@ -490,7 +506,7 @@ async function endpointDetail(ctx: WbContext, payload: unknown): Promise<unknown
   }
 
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   let root: string
   if (repoRoot !== undefined) {
     root = repoRoot
@@ -528,7 +544,7 @@ async function endpointDetail(ctx: WbContext, payload: unknown): Promise<unknown
   })
 
   const diffOut = await withGitError('show (diff)', () =>
-    runGit(root, ['-c', 'log.showSignature=false', 'show', '--format=', '--no-ext-diff', hash]),
+    runGit(root, ['-c', 'log.showSignature=false', 'show', '--format=', '--no-ext-diff', hash], 8 * 1024 * 1024),
   )
   const truncated = diffOut.length > MAX_DIFF_CHARS
   let diff = diffOut
@@ -544,7 +560,7 @@ async function endpointDetail(ctx: WbContext, payload: unknown): Promise<unknown
   return { meta, files, diff, truncated }
 }
 
-/** name-status / numstat args, root-commit variant from the analysis §2.8. */
+/** name-status / numstat args, root-commit variant (diff-tree --root). */
 function diffArgs(arg: string, from: string, to: string, isRoot: boolean): string[] {
   if (isRoot) {
     // --no-commit-id: without it diff-tree emits the commit hash as the
@@ -589,7 +605,7 @@ async function endpointBranches(ctx: WbContext, payload: unknown): Promise<unkno
   const sessionId = stringOrUndefined(payload, 'sessionId')
   const showRemote = (payload as Record<string, unknown> | null)?.['showRemote'] === true
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
   const out = await withGitError('branch', () => runGit(root, buildBranchArgs(showRemote)))
   let head: string | null = null
@@ -605,7 +621,14 @@ async function endpointBranches(ctx: WbContext, payload: unknown): Promise<unkno
 
 /** POST /wb-git/config { sessionId, key, value? }
  *  read  → { key, value: string|null } (unset key → null)
- *  write → { key, value } */
+ *  write → { key, value }
+ *
+ * Writes are restricted to a key allowlist (`user.name` / `user.email` —
+ * the identity the settings UI manages). Other keys are read-only: keys
+ * like `core.hooksPath`, `core.sshCommand`, `alias.*` and
+ * `remote.<n>.uploadpack` change what later git commands execute, and a
+ * browser-trust-fenced endpoint must not let a page arm git to run
+ * arbitrary code on the next commit/push. */
 async function endpointConfig(ctx: WbContext, payload: unknown): Promise<unknown> {
   const sessionId = stringOrUndefined(payload, 'sessionId')
   const raw = payload as Record<string, unknown> | null
@@ -615,11 +638,16 @@ async function endpointConfig(ctx: WbContext, payload: unknown): Promise<unknown
   }
   const rawValue = raw?.['value']
   const hasValue = typeof rawValue === 'string'
-  if (hasValue && (rawValue.includes('\n') || rawValue.includes('"') || rawValue.includes("'"))) {
-    throw new WbError('bad-request', 'config value must not contain newlines or quotes')
+  if (hasValue) {
+    if (key !== 'user.name' && key !== 'user.email') {
+      throw new WbError('forbidden', `config write to "${key}" is not allowed`, 403)
+    }
+    if (rawValue.includes('\n') || rawValue.includes('"') || rawValue.includes("'")) {
+      throw new WbError('bad-request', 'config value must not contain newlines or quotes')
+    }
   }
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   // Require a work tree so config always targets the repo-local config:
   // outside a repo `git config` would fall back to the user-global config
   // (a read leak and, on old git, a global write). The session-cwd path gets
@@ -670,8 +698,14 @@ async function endpointRemote(ctx: WbContext, payload: unknown): Promise<unknown
   if (url !== undefined && (typeof url !== 'string' || url === '' || url.startsWith('-') || /\s/.test(url))) {
     throw new WbError('bad-request', 'invalid remote url (must not contain whitespace or start with "-")')
   }
+  // Reject remote-helper URLs (`::` in the value turns on git's remote
+  // helper surface, e.g. `ext::sh -c …` — a code-execution vector a
+  // browser-trust-fenced endpoint must not expose).
+  if (url !== undefined && typeof url === 'string' && url.includes('::')) {
+    throw new WbError('bad-request', 'remote url must not use a remote-helper scheme')
+  }
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
   if (action === 'list') {
     const out = await withGitError('remote', () => runGit(root, buildRemoteListArgs()))
@@ -720,7 +754,7 @@ async function endpointRef(ctx: WbContext, payload: unknown): Promise<unknown> {
     throw new WbError('bad-request', `invalid commit hash "${String(hash)}"`)
   }
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
   if (action === 'create-branch') {
     if (name === undefined || hash === undefined) throw new WbError('bad-request', 'create-branch requires name and hash')
@@ -763,10 +797,36 @@ async function endpointRef(ctx: WbContext, payload: unknown): Promise<unknown> {
     await withGitError('push', () => runGit(root, buildPushTagArgs(remote, name)))
     return { action, name, remote }
   }
-  // checkout: { hash } → detached, { name } → branch/tag switch.
+  // checkout: { hash } → detached switch, { name } → branch/tag switch.
+  // `git switch` never falls back to path semantics, so a name that matches
+  // a tracked file cannot silently restore that file from the index and
+  // destroy working-tree changes. Branch and tag names are resolved first:
+  // a branch switches normally, a tag needs --detach (git switch refuses
+  // tags without it).
   const ref = typeof hash === 'string' ? hash : typeof name === 'string' ? name : undefined
   if (ref === undefined) throw new WbError('bad-request', 'checkout requires a hash or a branch name')
-  await withGitError('checkout', () => runGit(root, buildCheckoutArgs(ref)))
+  if (typeof hash === 'string') {
+    await withGitError('switch --detach', () => runGit(root, buildSwitchDetachArgs(hash)))
+  } else {
+    // Resolve the ref type so git switch gets the right invocation.
+    let kind: 'branch' | 'tag'
+    try {
+      await runGit(root, ['rev-parse', '--verify', `refs/heads/${name}`])
+      kind = 'branch'
+    } catch {
+      try {
+        await runGit(root, ['rev-parse', '--verify', `refs/tags/${name}`])
+        kind = 'tag'
+      } catch {
+        throw new WbError('bad-request', `unknown branch or tag "${String(name)}"`)
+      }
+    }
+    if (kind === 'branch') {
+      await withGitError('switch', () => runGit(root, buildSwitchArgs(name!)))
+    } else {
+      await withGitError('switch --detach', () => runGit(root, buildSwitchDetachArgs(name!)))
+    }
+  }
   return { action, ref }
 }
 
@@ -800,18 +860,21 @@ function pushModeOf(raw: Record<string, unknown> | null): 'normal' | 'force-with
 async function endpointStatusFiles(ctx: WbContext, payload: unknown): Promise<unknown> {
   const sessionId = stringOrUndefined(payload, 'sessionId')
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
-  const out = await withGitError('status', () => runGit(root, buildStatusFilesArgs()))
+  const out = await withGitError('status', () => runGit(root, buildStatusFilesArgs(), 8 * 1024 * 1024))
   return { files: parseStatusFiles(out) }
 }
 
-/** Relative paths for git add/reset: no leading '-' (git option), no
- *  absolute path, no '..' escape, no control characters/NUL. Spaces and
- *  non-ASCII (e.g. Chinese filenames) are allowed — status-files returns
- *  such paths, so stage must accept them (git add handles them as argv). */
+/**
+ * Relative paths for git add/reset: no leading '-' (git option), no leading
+ * ':' (pathspec magic — `:(...)` selects an unintended set), no absolute
+ * path, no '..' escape, no control characters/NUL. Spaces and non-ASCII
+ * (e.g. Chinese filenames) are allowed — status-files returns such paths,
+ * so stage must accept them (git add handles them as argv).
+ */
 function isValidStagePath(path: string): boolean {
-  if (path === '' || path.startsWith('-')) return false
+  if (path === '' || path.startsWith('-') || path.startsWith(':')) return false
   if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) return false
   if (path.includes('..')) return false
   // eslint-disable-next-line no-control-regex
@@ -841,7 +904,7 @@ async function endpointStage(ctx: WbContext, payload: unknown): Promise<unknown>
     path = rawPath
   }
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
   if (action === 'add') {
     await withGitError('add', () => runGit(root, buildStageAddArgs(path)))
@@ -866,7 +929,7 @@ async function endpointCommit(ctx: WbContext, payload: unknown): Promise<unknown
     throw new WbError('bad-request', 'commit message must be a non-empty string (max 2000 chars)')
   }
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
   await withGitError('commit', () => runGit(root, buildCommitArgs(message)))
   let hash: string | null = null
@@ -907,7 +970,7 @@ async function endpointFileContent(ctx: WbContext, payload: unknown): Promise<un
   }
 
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
 
   let rev: string
@@ -926,7 +989,7 @@ async function endpointFileContent(ctx: WbContext, payload: unknown): Promise<un
   // Run git show <rev>:<path>
   let stdout: string
   try {
-    stdout = await runGit(root, buildShowFileArgs(rev, filePath))
+    stdout = await runGit(root, buildShowFileArgs(rev, filePath), 4 * 1024 * 1024)
   } catch (error) {
     const msg = messageOf(error)
     // File not found or rev not found → exists:false (not fs-error)
@@ -980,7 +1043,7 @@ async function endpointFetch(ctx: WbContext, payload: unknown): Promise<unknown>
     remote = rawRemote
   }
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
   await withGitError('fetch', () => runGit(root, buildFetchArgs(remote)))
   return { action: 'fetch', remote }
@@ -1002,7 +1065,7 @@ async function endpointPull(ctx: WbContext, payload: unknown): Promise<unknown> 
     throw new WbError('bad-request', `invalid branch name "${String(branch)}"`)
   }
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
   await withGitError('pull', () => runGit(root, buildPullArgs(remote, branch)))
   return { action: 'pull', remote, branch }
@@ -1027,7 +1090,7 @@ async function endpointFetchInto(ctx: WbContext, payload: unknown): Promise<unkn
     throw new WbError('bad-request', `invalid local branch name "${String(localBranch)}"`)
   }
   const cwd = sessionCwdOf(ctx, sessionId)
-  const repoRoot = await repoRootOf(payload)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
   const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
   await withGitError('fetch', () => runGit(root, buildFetchIntoArgs(remote, remoteBranch, localBranch)))
   return { action: 'fetch-into', remote, remoteBranch, localBranch }
