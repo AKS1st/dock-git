@@ -421,6 +421,11 @@ const CSS = `
 /* A single content line within a pane.  Each row is one diff line
    (20px tall) and grows with max-content so the pane scrolls. */
 .dg-diff-line {
+  display: block;
+  /* Fill the pane so the add/del background spans the whole row, not just the
+     text; long lines still overflow via min-width: max-content. */
+  width: 100%;
+  box-sizing: border-box;
   min-height: 20px;
   height: 20px;
   padding: 0 8px;

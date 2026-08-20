@@ -301,6 +301,10 @@ export function CommitView(props: ViewProps): ReactNode {
   const branchesSeq = useRef(0)
   const statusSeq = useRef(0)
   const detailSeq = useRef(0)
+  // The bottom panel's detail fetch is a separate request stream from the
+  // inline expansion's — sharing one sequence ref would let one effect cancel
+  // the other's settle (leaving the inline strip stuck on "loading").
+  const panelDetailSeq = useRef(0)
   const contentSeq = useRef(0)
 
   // Scroll restoration for "load more" (the new, longer list must not jump).
@@ -457,11 +461,11 @@ export function CommitView(props: ViewProps): ReactNode {
       setNewContent(null)
       return
     }
-    const seq = ++detailSeq.current
+    const seq = ++panelDetailSeq.current
     let cancelled = false
     postWb<DetailValue>('/wb-git/detail', body({ hash: panelHash }))
       .then((value) => {
-        if (cancelled || seq !== detailSeq.current) return
+        if (cancelled || seq !== panelDetailSeq.current) return
         setPanelDetail(value)
         setSelectedFile(value.files.length > 0 ? value.files[0].path : null)
         setOldContent(null)
@@ -1201,12 +1205,11 @@ export function CommitView(props: ViewProps): ReactNode {
         diffNode = createElement('div', { className: 'dg-content-empty' }, t('noFileSelected'))
       } else if (oldContent.binary || newContent.binary) {
         diffNode = createElement('div', { className: 'dg-content-empty' }, t('binaryFile'))
-      } else if (!oldContent.exists && newContent.exists) {
-        diffNode = createElement('div', { className: 'dg-content-empty' }, t('fileMissingAdd'))
-      } else if (oldContent.exists && !newContent.exists) {
-        diffNode = createElement('div', { className: 'dg-content-empty' }, t('fileMissingDelete'))
       } else {
-        const rows = diffText(oldContent.content, newContent.content)
+        // Added/deleted files have an empty side: diffText turns that into an
+        // all-add / all-delete listing, so the content is shown rather than a
+        // "file missing" placeholder.
+        const rows = diffText(oldContent.content ?? '', newContent.content ?? '')
         const lineClass = (cell: { type: string } | undefined): string => {
           if (cell === undefined) return 'dg-diff-line dg-diff-empty'
           if (cell.type === 'add') return 'dg-diff-line dg-diff-add'
