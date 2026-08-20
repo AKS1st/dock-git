@@ -35,7 +35,7 @@ export function apply(ctx: WorkbenchContext): void {
   // (which in turn opens the floating graph window).
   ctx.effect(() => workbench.registerActivityBarItem({
     id: 'git',
-    title: 'Git History',
+    title: translate(detectLocale(ctx), 'graphTitle'),
     icon: GIT_ICON,
     order: 20,
     paneId: 'git',
@@ -58,7 +58,7 @@ export function apply(ctx: WorkbenchContext): void {
   // 520×360, user-resizable, geometry remembered per view id).
   ctx.effect(() => workbench.registerEditorView({
     id: GRAPH_VIEW_ID,
-    title: 'Git History',
+    title: () => translate(detectLocale(ctx), 'graphTitle'),
     icon: GIT_ICON,
     order: 20,
     component: CommitView,

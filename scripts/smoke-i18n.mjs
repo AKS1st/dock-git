@@ -55,7 +55,7 @@ check(
 console.log('== translate: zh/en lookups ==')
 check('zh viewDetails', translate('zh', 'viewDetails') === '查看详情', translate('zh', 'viewDetails'))
 check('en viewDetails', translate('en', 'viewDetails') === 'View Details', translate('en', 'viewDetails'))
-check('zh graphTitle', translate('zh', 'graphTitle') === 'Git History', translate('zh', 'graphTitle'))
+check('zh graphTitle', translate('zh', 'graphTitle') === '提交历史', translate('zh', 'graphTitle'))
 check('en graphTitle', translate('en', 'graphTitle') === 'Git History', translate('en', 'graphTitle'))
 check('en notRepo', translate('en', 'notRepo') === 'The current workspace is not a git repository', translate('en', 'notRepo'))
 

@@ -23,7 +23,7 @@ export interface Dict {
 export const DICTS: Record<LocaleId, Dict> = {
   zh: {
     // ── Graph view ──────────────────────────────────────────────────────
-    graphTitle: 'Git History',
+    graphTitle: '提交历史',
     notRepo: '当前工作区不是 git 仓库',
     notRepoHint: '该目录下没有找到 git 仓库',
     noCommits: '没有提交',

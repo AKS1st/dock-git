@@ -1,5 +1,5 @@
 /**
- * Git History settings panel (rendered inside the 'git-history' floating window):
+ * Git history settings panel (rendered inside the 'git-history' floating window):
  *
  *  1. Git user — read/save `user.name` / `user.email` via /wb-git/config
  *     (repo-local config; a work tree is required by the host).

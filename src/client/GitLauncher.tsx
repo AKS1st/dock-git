@@ -1,5 +1,5 @@
 /**
- * Git History launcher (dock side-bar pane 'git'): clicking the dock 'git'
+ * Git launcher (dock side-bar pane 'git'): clicking the dock 'git'
  * activity item scans the workspace for git repositories (host
  * /wb-git/repos, cwd + two levels) and either
  *   - opens the full history graph in an independent floating window and
