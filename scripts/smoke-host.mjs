@@ -22,9 +22,9 @@
  * pin the default-remote path without any network).
  *
  * Run after building:
- *   cd /home/zero/AgentX/plugins/dock-git && pnpm run build && node scripts/smoke-host.mjs
+ *   pnpm run build && node scripts/smoke-host.mjs
  *
- * The scratch repos are intentionally left in place for the coordinator.
+ * The scratch repos are intentionally left in place for inspection.
  */
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
@@ -892,7 +892,7 @@ writeFileSync(join(STAGE_REPO, 'two.txt'), '2\n')
   check('stage: buildStageAddArgs all (-A)', JSON.stringify(buildStageAddArgs()) === JSON.stringify(['add', '-A']), JSON.stringify(buildStageAddArgs()))
   check('stage: buildStageResetArgs path', JSON.stringify(buildStageResetArgs('one.txt')) === JSON.stringify(['reset', 'HEAD', 'one.txt']), JSON.stringify(buildStageResetArgs('one.txt')))
   check('stage: buildStageResetArgs all (--)', JSON.stringify(buildStageResetArgs()) === JSON.stringify(['reset', 'HEAD', '--']), JSON.stringify(buildStageResetArgs()))
-  check('stage: buildCommitArgs', JSON.stringify(buildCommitArgs('hi')) === JSON.stringify(['commit', '-m', 'hi']), JSON.stringify(buildCommitArgs('hi')))
+  check('stage: buildCommitArgs (--no-verify, hooks never run on browser commits)', JSON.stringify(buildCommitArgs('hi')) === JSON.stringify(['commit', '--no-verify', '-m', 'hi']), JSON.stringify(buildCommitArgs('hi')))
 }
 {
   // add a single file

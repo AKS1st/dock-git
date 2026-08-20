@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from '/home/zero/AgentX/plugins/dsh-mermaid/node_modules/playwright/index.mjs'
+import { chromium } from 'playwright'
 import { GRID, COLOURS, layoutGraph } from '../src/client/swimlane.ts'
 import { SEP } from '../src/git-ops.ts'
 
