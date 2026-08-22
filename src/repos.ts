@@ -27,6 +27,10 @@ export interface RepoEntry {
   name: string
   /** 0 = cwd itself, 1 = direct child of cwd, 2 = grandchild. */
   depth: number
+  /** Current branch name (rev-parse --abbrev-ref HEAD), or null when there is
+   *  none to show: detached HEAD, unborn HEAD (empty repo), or a repo that
+   *  cannot be resolved. */
+  branch: string | null
 }
 
 /** Directory-enumeration cap per scan layer (perf bound on one click). */
@@ -42,6 +46,21 @@ export async function isRepoRoot(dir: string, runGit: (cwd: string, args: string
     return (await runGit(dir, ['rev-parse', '--show-toplevel'])).trim() === resolve(dir)
   } catch {
     return false
+  }
+}
+
+/**
+ * Current branch name of a repository root, or null when there is none worth
+ * showing. `rev-parse --abbrev-ref HEAD` reports the literal "HEAD" both for a
+ * detached HEAD and for an unborn branch (empty repo), so both collapse to
+ * null; any failure (not a work tree) is also null.
+ */
+export async function currentBranchOf(root: string, runGit: (cwd: string, args: string[]) => Promise<string>): Promise<string | null> {
+  try {
+    const resolved = (await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+    return resolved !== '' && resolved !== 'HEAD' ? resolved : null
+  } catch {
+    return null
   }
 }
 
@@ -111,7 +130,7 @@ export async function scanRepos(cwd: string, runGit: (cwd: string, args: string[
       const root = resolve(top)
       if (!seen.has(root)) {
         seen.add(root)
-        entries.push({ root, name: basename(root), depth: 0 })
+        entries.push({ root, name: basename(root), depth: 0, branch: await currentBranchOf(root, runGit) })
       }
     }
   } catch {
@@ -119,13 +138,13 @@ export async function scanRepos(cwd: string, runGit: (cwd: string, args: string[
   }
 
   const level1 = await candidateDirs(base, MAX_SCAN_DIRS)
-  const level1Repo = await mapLimit(level1, 8, async (dir) => ((await isRepoRoot(dir, runGit)) ? dir : null))
-  for (const dir of level1Repo) {
-    if (dir !== null) {
-      const root = resolve(dir)
+  const level1Repo = await mapLimit(level1, 8, (dir) => discoverRepo(dir, runGit))
+  for (const entry of level1Repo) {
+    if (entry !== null) {
+      const { root, branch } = entry
       if (!seen.has(root)) {
         seen.add(root)
-        entries.push({ root, name: basename(root), depth: 1 })
+        entries.push({ root, name: basename(root), depth: 1, branch })
       }
     }
   }
@@ -140,16 +159,27 @@ export async function scanRepos(cwd: string, runGit: (cwd: string, args: string[
     level2.push(...sub)
     scanned += sub.length
   }
-  const level2Repo = await mapLimit(level2, 8, async (child) => ((await isRepoRoot(child, runGit)) ? child : null))
-  for (const child of level2Repo) {
-    if (child !== null) {
-      const root = resolve(child)
+  const level2Repo = await mapLimit(level2, 8, (child) => discoverRepo(child, runGit))
+  for (const entry of level2Repo) {
+    if (entry !== null) {
+      const { root, branch } = entry
       if (!seen.has(root)) {
         seen.add(root)
-        entries.push({ root, name: basename(root), depth: 2 })
+        entries.push({ root, name: basename(root), depth: 2, branch })
       }
     }
   }
 
   return entries
+}
+
+/** Resolve one candidate directory into a repo root + current branch, or null
+ *  when it is not a repository root. Used by the depth-1/2 scan layers. */
+async function discoverRepo(
+  dir: string,
+  runGit: (cwd: string, args: string[]) => Promise<string>,
+): Promise<{ root: string; branch: string | null } | null> {
+  if (!(await isRepoRoot(dir, runGit))) return null
+  const root = resolve(dir)
+  return { root, branch: await currentBranchOf(root, runGit) }
 }

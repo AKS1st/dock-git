@@ -130,7 +130,6 @@ export const DICTS: Record<LocaleId, Dict> = {
     diffRowsTooLong: '差异行过多,仅显示前 {n} 行',
 
     // ── Commit panel (VS Code style: files + stage + message) ───────────
-    commitPanelTitle: '更改',
     stageAll: '全部暂存',
     stage: '暂存',
     unstage: '取消暂存',
@@ -171,6 +170,7 @@ export const DICTS: Record<LocaleId, Dict> = {
     depthSub: '子目录',
     depthNested: '孙目录',
     openRepo: '打开仓库',
+    repoBranch: '当前分支',
   },
   en: {
     // ── Graph view ──────────────────────────────────────────────────────
@@ -278,7 +278,6 @@ export const DICTS: Record<LocaleId, Dict> = {
     diffRowsTooLong: 'Too many diff rows, showing the first {n}',
 
     // ── Commit panel (VS Code style: files + stage + message) ───────────
-    commitPanelTitle: 'Changes',
     stageAll: 'Stage All',
     stage: 'Stage',
     unstage: 'Unstage',
@@ -319,6 +318,7 @@ export const DICTS: Record<LocaleId, Dict> = {
     depthSub: 'subdirectory',
     depthNested: 'nested',
     openRepo: 'Open repository',
+    repoBranch: 'Current branch',
   },
 }
 

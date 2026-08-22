@@ -13,7 +13,7 @@
  * the process cwd while a session is hydrating).
  */
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
-import { realpath, stat } from 'node:fs/promises'
+import { realpath, readFile, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   buildBranchArgs,
@@ -106,7 +106,7 @@ export {
 } from './git-ops.ts'
 export type { CommitDetailMeta, FileChange, GitLogCommit, StatusFile } from './types.ts'
 // Multi-repo discovery (re-exported for the host smoke script).
-export { MAX_SCAN_DIRS, isRepoRoot, scanRepos } from './repos.ts'
+export { MAX_SCAN_DIRS, currentBranchOf, isRepoRoot, scanRepos } from './repos.ts'
 export type { RepoEntry } from './repos.ts'
 
 // ── Wire helpers (stripped from dock-files pattern) ────────────────────────
@@ -1025,6 +1025,70 @@ async function endpointFileContent(ctx: WbContext, payload: unknown): Promise<un
   return { content, exists: true, truncated, binary: false }
 }
 
+/** POST /wb-git/worktree-content { sessionId, repoRoot?, path }
+ *  → { old: { content, exists, truncated, binary }, new: { content, exists, truncated, binary } }
+ *  `old` is the file as last committed (HEAD) — absent for a new file or an
+ *  unborn HEAD; `new` is its current working-tree content — absent for a
+ *  deletion. Used by the working-tree panel's side-by-side diff (old vs new). */
+async function endpointWorktreeContent(ctx: WbContext, payload: unknown): Promise<unknown> {
+  const sessionId = stringOrUndefined(payload, 'sessionId')
+  const raw = payload as Record<string, unknown> | null
+  const filePath = raw?.['path']
+  if (typeof filePath !== 'string' || !isValidStagePath(filePath)) {
+    throw new WbError('bad-request', `invalid file path "${String(filePath ?? '')}"`)
+  }
+  const cwd = sessionCwdOf(ctx, sessionId)
+  const repoRoot = await repoRootOf(payload, ctx, sessionId)
+  const root = repoRoot ?? await workTreeRootOf(ctx, cwd)
+
+  const blank = { content: '', exists: false, truncated: false, binary: false }
+  // Slice to MAX_FILE_CONTENT_CHARS without splitting a UTF-16 surrogate pair.
+  const slice = (text: string): { content: string; truncated: boolean } => {
+    if (text.length <= MAX_FILE_CONTENT_CHARS) return { content: text, truncated: false }
+    const cut = text.slice(0, MAX_FILE_CONTENT_CHARS)
+    const last = cut.charCodeAt(cut.length - 1)
+    const end = last >= 0xd800 && last <= 0xdbff ? cut.length - 1 : cut.length
+    return { content: cut.slice(0, end), truncated: true }
+  }
+
+  // Old side: the file as last committed (HEAD). Missing file / unborn HEAD → absent.
+  let old = blank
+  try {
+    const stdout = await runGit(root, buildShowFileArgs('HEAD', filePath), 4 * 1024 * 1024)
+    if (stdout.includes('\0')) {
+      old = { content: '', exists: true, truncated: false, binary: true }
+    } else {
+      const { content, truncated } = slice(stdout)
+      old = { content, exists: true, truncated, binary: false }
+    }
+  } catch {
+    old = blank
+  }
+
+  // New side: the working-tree file on disk, confined to the repo root.
+  let next = blank
+  const abs = resolve(root, filePath)
+  const rel = relative(root, abs)
+  if (!rel.startsWith('..') && !isAbsolute(rel)) {
+    try {
+      const info = await stat(abs)
+      if (info.isFile()) {
+        const buf = await readFile(abs)
+        if (buf.includes(0)) {
+          next = { content: '', exists: true, truncated: false, binary: true }
+        } else {
+          const { content, truncated } = slice(buf.toString('utf8'))
+          next = { content, exists: true, truncated, binary: false }
+        }
+      }
+    } catch {
+      next = blank
+    }
+  }
+
+  return { old, new: next }
+}
+
 // ── Fetch / pull / fetch-into endpoints ──────────────────────────────────────
 
 /** POST /wb-git/fetch { sessionId, repoRoot?, remote? }
@@ -1148,6 +1212,8 @@ export function apply(ctx: WbContext): void {
           value = await endpointFetchInto(ctx, payload)
         } else if (method === 'file-content') {
           value = await endpointFileContent(ctx, payload)
+        } else if (method === 'worktree-content') {
+          value = await endpointWorktreeContent(ctx, payload)
         } else {
           writeError(res, new WbError('not-found', `unknown /wb-git method "${method}"`, 404))
           return

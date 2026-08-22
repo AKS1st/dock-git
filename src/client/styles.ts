@@ -560,6 +560,25 @@ const CSS = `
 body[data-ds-dark-theme] .dg-repo-depth-0 { border-color: #58a6ff; color: #58a6ff; background: rgba(88, 166, 255, 0.14); }
 body[data-ds-dark-theme] .dg-repo-depth-1 { border-color: #3fb950; color: #3fb950; background: rgba(63, 185, 80, 0.14); }
 body[data-ds-dark-theme] .dg-repo-depth-2 { border-color: #f0883e; color: #f0883e; background: rgba(240, 136, 62, 0.14); }
+/* Current-branch chip: a neutral monospace pill, quieter than the depth badge
+   (the branch name is data, not a nesting marker). Shown only when a branch
+   exists; detached/unborn HEADs leave it out, so the row just has name + depth. */
+.dg-repo-branch {
+  flex-shrink: 0;
+  max-width: 130px;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid var(--dsw-alias-label-secondary, #656d76);
+  color: var(--dsw-alias-label-secondary, #656d76);
+  background: rgba(127, 127, 127, 0.10);
+}
 .dg-repo-empty {
   padding: 12px 2px;
   font-size: 13px;
@@ -736,21 +755,37 @@ body[data-ds-dark-theme] .dg-repo-depth-2 { border-color: #f0883e; color: #f0883
 }
 .dg-dialog-check input { margin: 0; cursor: pointer; }
 
-/* Commit panel (bottom-docked like the detail panel; VS Code style). */
-.dg-commit-panel {
-  flex-shrink: 0;
-  max-height: 55%;
+/* Commit form — the LEFT column of the bottom detail panel when the
+   uncommitted row is selected (VS Code style: files + stage + message). */
+.dg-commit-form {
+  flex: 0 0 28%;
+  min-width: 120px;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
-  background: var(--dsw-alias-bg-layer-2, #ffffff);
+  overflow: hidden;
+  border-right: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
+  font-size: 12px;
 }
-.dg-commit-body {
+.dg-commit-form-title {
+  font-weight: 600;
+  font-size: 12px;
+  padding: 2px 8px 4px;
+  color: var(--dsw-alias-label-secondary, #656d76);
+  flex-shrink: 0;
+}
+.dg-commit-form-files {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
-  padding: 8px 10px;
+  padding: 2px 8px 4px;
+}
+.dg-commit-form-empty { padding: 2px 8px 4px; }
+.dg-commit-form-footer {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 4px 8px 8px;
 }
 .dg-commit-row {
   display: flex;
@@ -758,13 +793,18 @@ body[data-ds-dark-theme] .dg-repo-depth-2 { border-color: #f0883e; color: #f0883
   gap: 6px;
   font-size: 12px;
   padding: 2px 0;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.dg-commit-row:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.10)); }
+.dg-commit-row-selected { background: var(--dsw-alias-interactive-bg-hover-accent, rgba(9, 105, 218, 0.12)); }
 .dg-commit-row-btn { margin-left: auto; flex-shrink: 0; }
 .dg-commit-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 4px;
 }
 .dg-commit-hint { flex: 1; }
 .dg-commit-msg {

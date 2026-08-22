@@ -302,11 +302,19 @@ export function CommitView(props: ViewProps): ReactNode {
   const [contentLoading, setContentLoading] = useState(false)
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set())
 
-  // ── Working-tree panel ───────────────────────────────────────────────────
-  const [commitPanelOpen, setCommitPanelOpen] = useState(false)
+  // ── Working-tree panel (the commit form lives inside the bottom panel) ──
   const [statusFiles, setStatusFiles] = useState<StatusFile[]>([])
   const [commitMsg, setCommitMsg] = useState('')
   const [commitError, setCommitError] = useState<string | null>(null)
+  // The bottom detail panel runs in one of two modes: a committed row's detail
+  // (panelHash set) or the working-tree commit form (panelIsWorktree). The
+  // working-tree side keeps its own selected-file + old/new content so it never
+  // shares state with the commit-detail columns.
+  const [panelIsWorktree, setPanelIsWorktree] = useState(false)
+  const [wtSelectedFile, setWtSelectedFile] = useState<string | null>(null)
+  const [wtOld, setWtOld] = useState<FileContentValue | null>(null)
+  const [wtNew, setWtNew] = useState<FileContentValue | null>(null)
+  const [wtLoading, setWtLoading] = useState(false)
 
   // ── Operation strip / busy guard ─────────────────────────────────────────
   const [opMsg, setOpMsg] = useState<string | null>(null)
@@ -330,6 +338,7 @@ export function CommitView(props: ViewProps): ReactNode {
   // the other's settle (leaving the inline strip stuck on "loading").
   const panelDetailSeq = useRef(0)
   const contentSeq = useRef(0)
+  const wtSeq = useRef(0)
 
   // Scroll restoration for "load more" (the new, longer list must not jump).
   const rowsRef = useRef<HTMLDivElement | null>(null)
@@ -364,6 +373,11 @@ export function CommitView(props: ViewProps): ReactNode {
     setNewContent(null)
     setStatusFiles([])
     setCommitError(null)
+    setPanelIsWorktree(false)
+    setWtSelectedFile(null)
+    setWtOld(null)
+    setWtNew(null)
+    setWtLoading(false)
     setOpMsg(null)
     setOpError(null)
   }, [])
@@ -529,6 +543,40 @@ export function CommitView(props: ViewProps): ReactNode {
     return () => { cancelled = true }
   }, [panelHash, selectedFile, sessionId, body])
 
+  // Working-tree panel: keep the selected file valid (default to the first).
+  useEffect(() => {
+    if (!panelIsWorktree) return
+    setWtSelectedFile((current) =>
+      current !== null && statusFiles.some((f) => f.path === current) ? current : (statusFiles[0]?.path ?? null))
+  }, [panelIsWorktree, statusFiles])
+
+  // Working-tree diff for the selected file (old = HEAD, new = worktree).
+  useEffect(() => {
+    if (!panelIsWorktree || wtSelectedFile === null || sessionId === undefined) {
+      setWtOld(null)
+      setWtNew(null)
+      setWtLoading(false)
+      return
+    }
+    const seq = ++wtSeq.current
+    let cancelled = false
+    setWtLoading(true)
+    postWb<{ old: FileContentValue; new: FileContentValue }>('/wb-git/worktree-content', body({ path: wtSelectedFile }))
+      .then((value) => {
+        if (cancelled || seq !== wtSeq.current) return
+        setWtOld(value.old)
+        setWtNew(value.new)
+        setWtLoading(false)
+      })
+      .catch(() => {
+        if (cancelled || seq !== wtSeq.current) return
+        setWtOld(null)
+        setWtNew(null)
+        setWtLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [panelIsWorktree, wtSelectedFile, sessionId, body])
+
   // Restore the scroll position after "load more" replaced the list.
   useEffect(() => {
     if (restoreScroll.current !== null && rowsRef.current !== null) {
@@ -591,15 +639,29 @@ export function CommitView(props: ViewProps): ReactNode {
 
   /** Clicking a row selects it, toggles its inline expansion (the uncommitted
    *  pseudo-row can be selected but never expanded) and opens the bottom
-   *  detail panel for that commit. */
+   *  detail panel. A committed row shows its detail; the uncommitted
+   *  pseudo-row shows the working-tree commit form instead. */
   const toggleRow = useCallback((rowId: number): void => {
     setSelectedId(rowId)
     const isPseudo = commits[rowId]?.hash === '*'
     if (!isPseudo) setExpandedId((current) => (current === rowId ? null : rowId))
     const commit = commits[rowId]
-    if (commit !== undefined && !isPseudo) {
-      setPanelOpen(true)
-      setPanelHash(commit.hash)
+    if (commit !== undefined) {
+      if (isPseudo) {
+        setPanelIsWorktree(true)
+        setPanelHash(null)
+        setPanelDetail(null)
+        setPanelOpen(true)
+        setSelectedFile(null)
+        setOldContent(null)
+        setNewContent(null)
+        setContentLoading(false)
+        setWtSelectedFile(null)
+      } else {
+        setPanelIsWorktree(false)
+        setPanelOpen(true)
+        setPanelHash(commit.hash)
+      }
     }
   }, [commits])
 
@@ -859,6 +921,154 @@ export function CommitView(props: ViewProps): ReactNode {
     refresh()
   }, [runWrite, body, refresh])
 
+  /** Side-by-side diff of one file (old vs new content), shared by the commit
+   *  detail panel and the working-tree panel. Both panes scroll in sync. */
+  const buildDiffPane = useCallback((
+    selectedPath: string | null,
+    oldContent: FileContentValue | null,
+    newContent: FileContentValue | null,
+    loading: boolean,
+  ): ReactNode => {
+    const empty = (key: string): ReactNode =>
+      createElement('div', { className: 'dg-content-empty' }, t(key))
+    if (selectedPath === null) return empty('noFileSelected')
+    if (loading) return empty('loading')
+    if (oldContent === null || newContent === null) return empty('noFileSelected')
+    if (oldContent.binary || newContent.binary) return empty('binaryFile')
+    // Added/deleted files have an empty side: diffText turns that into an
+    // all-add / all-delete listing, so the content is shown rather than a
+    // "file missing" placeholder.
+    const rows = diffText(oldContent.content ?? '', newContent.content ?? '')
+    const lineClass = (cell: { type: string } | undefined): string => {
+      if (cell === undefined) return 'dg-diff-line dg-diff-empty'
+      if (cell.type === 'add') return 'dg-diff-line dg-diff-add'
+      if (cell.type === 'del') return 'dg-diff-line dg-diff-del'
+      return 'dg-diff-line dg-diff-same'
+    }
+    const oldPane = rows.map((row, i) =>
+      createElement('div', { key: `o-${i}`, className: lineClass(row.old) }, row.old?.text ?? '\u00a0'))
+    const newPane = rows.map((row, i) =>
+      createElement('div', { key: `n-${i}`, className: lineClass(row.new) }, row.new?.text ?? '\u00a0'))
+    const oldLines = oldContent.content.split('\n').length
+    const newLines = newContent.content.split('\n').length
+    const tooLong = oldContent.truncated || newContent.truncated
+    const capped = oldLines > MAX_DIFF_LINES || newLines > MAX_DIFF_LINES
+    return createElement('div', { className: 'dg-diff-container' },
+      tooLong
+        ? createElement('div', { className: 'dg-content-title' }, t('contentTooLong', { n: rows.length }))
+        : null,
+      createElement('div', { className: 'dg-diff' },
+        createElement('div', { className: 'dg-diff-header' },
+          createElement('div', { className: 'dg-content-title' }, t('beforeLabel')),
+          createElement('div', { className: 'dg-content-title' }, t('afterLabel')),
+        ),
+        capped ? createElement('div', { className: 'dg-content-title' }, t('diffRowsTooLong', { n: rows.length })) : null,
+        createElement('div', { className: 'dg-diff-body' },
+          createElement('div', {
+            className: 'dg-diff-pane',
+            ref: oldPaneRef,
+            onScroll: () => {
+              if (oldPaneRef.current !== null && newPaneRef.current !== null) {
+                newPaneRef.current.scrollLeft = oldPaneRef.current.scrollLeft
+                newPaneRef.current.scrollTop = oldPaneRef.current.scrollTop
+              }
+            },
+          },
+            createElement('div', { className: 'dg-diff-lines' }, ...oldPane),
+          ),
+          createElement('div', {
+            className: 'dg-diff-pane',
+            ref: newPaneRef,
+            onScroll: () => {
+              if (oldPaneRef.current !== null && newPaneRef.current !== null) {
+                oldPaneRef.current.scrollLeft = newPaneRef.current.scrollLeft
+                oldPaneRef.current.scrollTop = newPaneRef.current.scrollTop
+              }
+            },
+          },
+            createElement('div', { className: 'dg-diff-lines' }, ...newPane),
+          ),
+        ),
+      ),
+    )
+  }, [t])
+
+  /** The working-tree commit form: file list with stage/unstage controls, a
+   *  Stage-All button, the commit-message box and the Commit action. Rendered
+   *  as the LEFT column of the bottom panel when the uncommitted row is
+   *  selected. */
+  const buildWorktreeForm = useCallback((): ReactNode => {
+    const fileRows = statusFiles.map((file) => {
+      const staged = file.staged
+      return createElement('div', {
+        key: file.path,
+        className: `dg-commit-row${wtSelectedFile === file.path ? ' dg-commit-row-selected' : ''}`,
+        title: file.oldPath !== undefined ? `${file.oldPath} → ${file.path}` : file.path,
+        onClick: () => setWtSelectedFile(file.path),
+      },
+        createElement('span', { className: `dg-file-status dg-file-${file.status}` }, file.status),
+        createElement('span', { className: 'dg-tree-name' }, file.path),
+        createElement('button', {
+          className: 'dg-btn dg-commit-row-btn',
+          disabled: busy,
+          onClick: (event: ReactMouseEvent) => {
+            event.stopPropagation()
+            void runWrite(null, async () => {
+              await postWb('/wb-git/stage', body({ action: staged ? 'unstage' : 'add', path: file.path }))
+            }).then((ok) => { if (ok) reloadStatus() })
+          },
+        }, staged ? t('unstage') : t('stage')),
+      )
+    })
+
+    const stageAllDisabled = statusFiles.length === 0 || statusFiles.every((f) => f.staged)
+    return createElement('div', { className: 'dg-commit-form' },
+      createElement('div', { className: 'dg-commit-form-title' }, t('filesLabel')),
+      statusFiles.length === 0
+        ? createElement('div', { className: 'dg-commit-empty dg-commit-form-empty' }, t('noChanges'))
+        : createElement('div', { className: 'dg-commit-form-files' }, ...fileRows),
+      createElement('div', { className: 'dg-commit-form-footer' },
+        createElement('div', { className: 'dg-commit-actions' },
+          createElement('button', {
+            className: 'dg-btn',
+            disabled: busy || stageAllDisabled,
+            onClick: () => {
+              void runWrite(null, async () => {
+                await postWb('/wb-git/stage', body({ action: 'add', all: true }))
+              }).then((ok) => { if (ok) reloadStatus() })
+            },
+          }, t('stageAll')),
+          createElement('span', { className: 'dg-commit-hint dg-muted' },
+            commitMsg.trim() === '' ? t('emptyMessage') : ''),
+        ),
+        createElement('textarea', {
+          className: 'dg-commit-msg',
+          value: commitMsg,
+          placeholder: t('commitMessagePlaceholder'),
+          onChange: (event: ChangeEvent<HTMLTextAreaElement>) => setCommitMsg(event.target.value),
+        }),
+        createElement('button', {
+          className: 'dg-btn dg-commit-btn',
+          disabled: busy || commitMsg.trim() === '',
+          onClick: () => {
+            const message = commitMsg.trim()
+            void runWrite(null, async () => {
+              const value = await postWb<{ action: string; hash: string | null }>('/wb-git/commit', body({ message }))
+              setOpMsg(t('commitDone', { hash: value.hash !== null ? shortHash(value.hash) : '' }))
+            }, (msg) => setCommitError(msg)).then((ok) => {
+              if (ok) {
+                setCommitMsg('')
+                refresh()
+                reloadStatus()
+              }
+            })
+          },
+        }, t('commitButton')),
+        commitError !== null ? createElement('div', { className: 'dg-commit-error' }, commitError) : null,
+      ),
+    )
+  }, [statusFiles, wtSelectedFile, busy, commitMsg, commitError, t, runWrite, body, reloadStatus, refresh])
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   if (mode === 'settings') {
@@ -951,12 +1161,6 @@ export function CommitView(props: ViewProps): ReactNode {
       }),
       t('showRemoteBranches'),
     ),
-    createElement('button', {
-      key: 'changes',
-      className: 'dg-btn',
-      disabled: busy,
-      onClick: () => setCommitPanelOpen((open) => !open),
-    }, t('commitPanelTitle')),
     createElement('button', {
       key: 'settings',
       className: 'dg-btn',
@@ -1135,9 +1339,13 @@ export function CommitView(props: ViewProps): ReactNode {
   // ── Bottom detail panel (three columns + raw diff mode) ──────────────────
 
   let panelNode: ReactNode = null
-  if (panelOpen && panelHash !== null) {
-    const commit = commits.find((c) => c.hash === panelHash)
-    const panelTitle = commit !== undefined ? commit.message : shortHash(panelHash)
+  if (panelOpen && (panelIsWorktree || panelHash !== null)) {
+    const commit = panelIsWorktree ? undefined : commits.find((c) => c.hash === panelHash)
+    const panelTitle = panelIsWorktree
+      ? t('uncommittedChanges')
+      : commit !== undefined
+        ? commit.message
+        : (panelHash !== null ? shortHash(panelHash) : '')
 
     const handleResizeStart = (event: ReactMouseEvent): void => {
       event.preventDefault()
@@ -1156,7 +1364,16 @@ export function CommitView(props: ViewProps): ReactNode {
     }
 
     let bodyNode: ReactNode
-    if (panelMode === 'diff') {
+    if (panelIsWorktree) {
+      // Working-tree commit form + the selected file's live diff: same two-column
+      // layout as a commit detail, but the left column shows the commit workflow.
+      bodyNode = createElement('div', { className: 'dg-detail-panel-body' },
+        createElement('div', { className: 'dg-detail-cols' },
+          buildWorktreeForm(),
+          buildDiffPane(wtSelectedFile, wtOld, wtNew, wtLoading),
+        ),
+      )
+    } else if (panelMode === 'diff') {
       // Raw commit diff mode (toggled on the panel head): one coloured line
       // per diff row — headers muted, hunk ranges tinted, additions/deletions
       // with the same red/green treatment as the side-by-side panes.
@@ -1219,85 +1436,13 @@ export function CommitView(props: ViewProps): ReactNode {
         }
       }
 
-      // Side-by-side diff of the selected file.
-      let diffNode: ReactNode
-      if (selectedFile === null) {
-        diffNode = createElement('div', { className: 'dg-content-empty' }, t('noFileSelected'))
-      } else if (contentLoading) {
-        diffNode = createElement('div', { className: 'dg-content-empty' }, t('loading'))
-      } else if (oldContent === null || newContent === null) {
-        diffNode = createElement('div', { className: 'dg-content-empty' }, t('noFileSelected'))
-      } else if (oldContent.binary || newContent.binary) {
-        diffNode = createElement('div', { className: 'dg-content-empty' }, t('binaryFile'))
-      } else {
-        // Added/deleted files have an empty side: diffText turns that into an
-        // all-add / all-delete listing, so the content is shown rather than a
-        // "file missing" placeholder.
-        const rows = diffText(oldContent.content ?? '', newContent.content ?? '')
-        const lineClass = (cell: { type: string } | undefined): string => {
-          if (cell === undefined) return 'dg-diff-line dg-diff-empty'
-          if (cell.type === 'add') return 'dg-diff-line dg-diff-add'
-          if (cell.type === 'del') return 'dg-diff-line dg-diff-del'
-          return 'dg-diff-line dg-diff-same'
-        }
-        const oldPane = rows.map((row, i) =>
-          createElement('div', { key: `o-${i}`, className: lineClass(row.old) }, row.old?.text ?? '\u00a0'))
-        const newPane = rows.map((row, i) =>
-          createElement('div', { key: `n-${i}`, className: lineClass(row.new) }, row.new?.text ?? '\u00a0'))
-        const oldLines = oldContent.content.split('\n').length
-        const newLines = newContent.content.split('\n').length
-        const tooLong = oldContent.truncated || newContent.truncated
-        const capped = oldLines > MAX_DIFF_LINES || newLines > MAX_DIFF_LINES
-        diffNode = createElement('div', { className: 'dg-diff-container' },
-          tooLong
-            ? createElement('div', { className: 'dg-content-title' }, t('contentTooLong', { n: rows.length }))
-            : null,
-          createElement('div', { className: 'dg-diff' },
-            createElement('div', { className: 'dg-diff-header' },
-              createElement('div', { className: 'dg-content-title' }, t('beforeLabel')),
-              createElement('div', { className: 'dg-content-title' }, t('afterLabel')),
-            ),
-            capped ? createElement('div', { className: 'dg-content-title' }, t('diffRowsTooLong', { n: rows.length })) : null,
-            createElement('div', { className: 'dg-diff-body' },
-              createElement('div', {
-                className: 'dg-diff-pane',
-                ref: oldPaneRef,
-                onScroll: () => {
-                  if (oldPaneRef.current !== null && newPaneRef.current !== null) {
-                    newPaneRef.current.scrollLeft = oldPaneRef.current.scrollLeft
-                    newPaneRef.current.scrollTop = oldPaneRef.current.scrollTop
-                  }
-                },
-              },
-                // The lines wrapper spans the full scroll content (the widest
-                // line), so every line's background extends to the same right
-                // edge — full-row highlighting that scrolls with the content.
-                createElement('div', { className: 'dg-diff-lines' }, ...oldPane),
-              ),
-              createElement('div', {
-                className: 'dg-diff-pane',
-                ref: newPaneRef,
-                onScroll: () => {
-                  if (oldPaneRef.current !== null && newPaneRef.current !== null) {
-                    oldPaneRef.current.scrollLeft = newPaneRef.current.scrollLeft
-                    oldPaneRef.current.scrollTop = newPaneRef.current.scrollTop
-                  }
-                },
-              },
-                createElement('div', { className: 'dg-diff-lines' }, ...newPane),
-              ),
-            ),
-          ),
-        )
-      }
-
       bodyNode = createElement('div', { className: 'dg-detail-panel-body' },
         createElement('div', { className: 'dg-detail-cols' },
           createElement('div', { className: 'dg-file-tree' },
             createElement('div', { className: 'dg-file-tree-title' }, t('filesLabel')),
             ...treeNodes,
           ),
-          diffNode,
+          buildDiffPane(selectedFile, oldContent, newContent, contentLoading),
         ),
       )
     }
@@ -1310,85 +1455,19 @@ export function CommitView(props: ViewProps): ReactNode {
       }),
       createElement('div', { className: 'dg-detail-panel-head' },
         createElement('span', { className: 'dg-detail-panel-title', title: panelTitle }, panelTitle),
-        createElement('button', {
-          className: 'dg-btn',
-          title: panelMode === 'files' ? t('viewDetails') : t('filesLabel'),
-          onClick: () => setPanelMode((m) => (m === 'files' ? 'diff' : 'files')),
-        }, panelMode === 'files' ? '⧉' : '≡'),
+        !panelIsWorktree
+          ? createElement('button', {
+            className: 'dg-btn',
+            title: panelMode === 'files' ? t('viewDetails') : t('filesLabel'),
+            onClick: () => setPanelMode((m) => (m === 'files' ? 'diff' : 'files')),
+          }, panelMode === 'files' ? '⧉' : '≡')
+          : null,
         createElement('button', {
           className: 'dg-btn',
           onClick: () => { setPanelOpen(false); setPanelHash(null) },
         }, t('close')),
       ),
       bodyNode,
-    )
-  }
-
-  // ── Working-tree change panel ────────────────────────────────────────────
-
-  let commitPanelNode: ReactNode = null
-  if (commitPanelOpen) {
-    const fileRows = statusFiles.map((file) => {
-      const staged = file.staged
-      return createElement('div', { key: file.path, className: 'dg-commit-row', title: file.oldPath !== undefined ? `${file.oldPath} → ${file.path}` : file.path },
-        createElement('span', { className: `dg-file-status dg-file-${file.status}` }, file.status),
-        createElement('span', { className: 'dg-tree-name' }, file.path),
-        createElement('button', {
-          className: 'dg-btn dg-commit-row-btn',
-          disabled: busy,
-          onClick: () => {
-            void runWrite(null, async () => {
-              await postWb('/wb-git/stage', body({ action: staged ? 'unstage' : 'add', path: file.path }))
-            }).then((ok) => { if (ok) reloadStatus() })
-          },
-        }, staged ? t('unstage') : t('stage')),
-      )
-    })
-
-    const stageAllDisabled = statusFiles.length === 0 || statusFiles.every((f) => f.staged)
-    commitPanelNode = createElement('div', { className: 'dg-commit-panel' },
-      createElement('div', { className: 'dg-commit-body' },
-        statusFiles.length === 0
-          ? createElement('div', { className: 'dg-commit-empty' }, t('noChanges'))
-          : createElement('div', null, ...fileRows),
-        createElement('div', { className: 'dg-commit-actions' },
-          createElement('button', {
-            className: 'dg-btn',
-            disabled: busy || stageAllDisabled,
-            onClick: () => {
-              void runWrite(null, async () => {
-                await postWb('/wb-git/stage', body({ action: 'add', all: true }))
-              }).then((ok) => { if (ok) reloadStatus() })
-            },
-          }, t('stageAll')),
-          createElement('span', { className: 'dg-commit-hint dg-muted' },
-            commitMsg.trim() === '' ? t('emptyMessage') : ''),
-        ),
-        createElement('textarea', {
-          className: 'dg-commit-msg',
-          value: commitMsg,
-          placeholder: t('commitMessagePlaceholder'),
-          onChange: (event: ChangeEvent<HTMLTextAreaElement>) => setCommitMsg(event.target.value),
-        }),
-        createElement('button', {
-          className: 'dg-btn dg-commit-btn',
-          disabled: busy || commitMsg.trim() === '',
-          onClick: () => {
-            const message = commitMsg.trim()
-            void runWrite(null, async () => {
-              const value = await postWb<{ action: string; hash: string | null }>('/wb-git/commit', body({ message }))
-              setOpMsg(t('commitDone', { hash: value.hash !== null ? shortHash(value.hash) : '' }))
-            }, (msg) => setCommitError(msg)).then((ok) => {
-              if (ok) {
-                setCommitMsg('')
-                refresh()
-                reloadStatus()
-              }
-            })
-          },
-        }, t('commitButton')),
-        commitError !== null ? createElement('div', { className: 'dg-commit-error' }, commitError) : null,
-      ),
     )
   }
 
@@ -1596,7 +1675,6 @@ export function CommitView(props: ViewProps): ReactNode {
       ...rowNodes,
     ),
     panelNode,
-    commitPanelNode,
     opError !== null ? createElement('div', { className: 'dg-op-error', key: 'op-error' }, opError) : null,
     opMsg !== null ? createElement('div', { className: 'dg-op-msg', key: 'op-msg' }, opMsg) : null,
     menu !== null ? createElement(ContextMenu, {

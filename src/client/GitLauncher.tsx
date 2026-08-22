@@ -25,6 +25,8 @@ interface RepoEntry {
   root: string
   name: string
   depth: number
+  /** Current branch name, or null (detached HEAD / unborn HEAD / unresolvable). */
+  branch: string | null
 }
 
 /** /wb-git/repos result. */
@@ -136,6 +138,9 @@ export function GitLauncher(props: ViewProps): ReactNode {
     },
       createElement('div', { className: 'dg-repo-item-top' },
         createElement('span', { className: 'dg-repo-name' }, repo.name),
+        typeof repo.branch === 'string' && repo.branch !== ''
+          ? createElement('span', { className: 'dg-repo-branch', title: t('repoBranch') }, repo.branch)
+          : null,
         createElement('span', {
           className: `dg-repo-depth dg-repo-depth-${Math.min(repo.depth, 2)}`,
           title: t('openRepo'),

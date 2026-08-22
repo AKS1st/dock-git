@@ -18,7 +18,7 @@ export declare const name = "dock-git";
 export declare const inject: string[];
 export { SEP, runGit, buildLogArgs, buildPushBranchArgs, buildPushTagArgs, buildDetailArgs, buildShowFileArgs, buildShowRefArgs, buildBranchArgs, buildConfigGetArgs, buildConfigSetArgs, buildRemoteListArgs, buildRemoteAddArgs, buildRemoteRemoveArgs, buildRemoteSetUrlArgs, buildCreateBranchArgs, buildRenameBranchArgs, buildDeleteBranchArgs, buildCreateTagArgs, buildDeleteTagArgs, buildCheckoutArgs, buildSwitchArgs, buildSwitchDetachArgs, buildFetchArgs, buildPullArgs, buildFetchIntoArgs, buildStatusFilesArgs, buildStageAddArgs, buildStageResetArgs, buildCommitArgs, parseGitLog, parseShowRef, parseCommitDetail, parseNameStatus, parseNumStat, parseBranches, parseRemotes, parseStatusFiles, } from './git-ops.ts';
 export type { CommitDetailMeta, FileChange, GitLogCommit, StatusFile } from './types.ts';
-export { MAX_SCAN_DIRS, isRepoRoot, scanRepos } from './repos.ts';
+export { MAX_SCAN_DIRS, currentBranchOf, isRepoRoot, scanRepos } from './repos.ts';
 export type { RepoEntry } from './repos.ts';
 /** Machine-readable error codes of the /wb-git API. */
 type WbErrorCode = 'bad-request' | 'forbidden' | 'fs-error' | 'not-found' | 'internal';

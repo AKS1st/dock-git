@@ -879,6 +879,35 @@ console.log('== step 16: status-files layer (write-repo) ==')
   check('route: status-files non-repo 400 fs-error', status === 400 && json?.ok === false && json?.error?.code === 'fs-error', JSON.stringify(json))
 }
 
+console.log('== step 16b: worktree-content (write-repo) ==')
+{
+  // staged modification: old = HEAD 'see\n', new = worktree 'status-test\n'
+  const { status, json } = await postWbGit(WRITE_REPO, '/wb-git/worktree-content', { sessionId: 's1', path: 'c.txt' })
+  const v = json?.value
+  check('route: worktree-content modified file 200', status === 200 && json?.ok === true, JSON.stringify(json))
+  check('worktree-content: modified old from HEAD', v?.old?.exists === true && v?.old?.binary === false && v?.old?.content === 'see\n', JSON.stringify(v?.old))
+  check('worktree-content: modified new from worktree', v?.new?.exists === true && v?.new?.binary === false && v?.new?.content === 'status-test\n', JSON.stringify(v?.new))
+}
+{
+  // untracked file: old absent (never in HEAD), new present
+  const { json } = await postWbGit(WRITE_REPO, '/wb-git/worktree-content', { sessionId: 's1', path: 'untracked.txt' })
+  const v = json?.value
+  check('worktree-content: untracked old exists:false', v?.old?.exists === false, JSON.stringify(v?.old))
+  check('worktree-content: untracked new content', v?.new?.exists === true && v?.new?.content === 'new\n', JSON.stringify(v?.new))
+}
+{
+  // deleted file: old present, new absent
+  const { json } = await postWbGit(WRITE_REPO, '/wb-git/worktree-content', { sessionId: 's1', path: 'extra.txt' })
+  const v = json?.value
+  check('worktree-content: deleted old exists:true', v?.old?.exists === true, JSON.stringify(v?.old))
+  check('worktree-content: deleted new exists:false', v?.new?.exists === false, JSON.stringify(v?.new))
+}
+{
+  // invalid path → 400
+  const { status, json } = await postWbGit(WRITE_REPO, '/wb-git/worktree-content', { sessionId: 's1', path: '..' })
+  check('route: worktree-content invalid path 400', status === 400 && json?.ok === false && json?.error?.code === 'bad-request', JSON.stringify(json))
+}
+
 console.log('== step 17: stage layer (fresh clone) ==')
 rmSync(STAGE_REPO, { recursive: true, force: true })
 setupIn(dirname(REPO), ['clone', REPO, STAGE_REPO])
@@ -1049,6 +1078,11 @@ writeFileSync(join(plainDir, 'file.txt'), 'x\n')
     byRoot.get(repoA)?.name === 'repo-a' && byRoot.get(repoC)?.name === 'repo-c' && byRoot.get(nestedChild)?.name === 'nested-child',
     JSON.stringify(repos.map((r) => r.name)),
   )
+  check(
+    'repos: branch field is main for repos with commits',
+    byRoot.get(repoA)?.branch === 'main' && byRoot.get(repoC)?.branch === 'main' && byRoot.get(nestedParent)?.branch === 'main',
+    JSON.stringify(repos.map((r) => r.branch)),
+  )
   // pure-layer check: direct scanRepos matches the route result
   const direct = await scanRepos(REPOS_ROOT, runGit)
   check('repos: direct scanRepos matches route', JSON.stringify(direct) === JSON.stringify(repos), `${direct.length} vs ${repos.length}`)
@@ -1072,6 +1106,21 @@ writeFileSync(join(plainDir, 'file.txt'), 'x\n')
   const { json } = await postWbGit(repoA, '/wb-git/repos', { sessionId: 's1' })
   const repos = json?.value?.repos ?? []
   check('repos: cwd=repo-a → only repo-a (depth 0)', repos.length === 1 && repos[0].root === repoA && repos[0].depth === 0, JSON.stringify(repos))
+}
+{
+  // Branch reporting: a repo on a non-default branch reports that branch, and
+  // an unborn-HEAD repo (init, no commit) reports branch:null (no "HEAD" leak).
+  const branchRepo = join(REPOS_ROOT, 'branch-feature')
+  initScratchRepo(branchRepo, { message: 'branch-feature: initial' })
+  setupIn(branchRepo, ['checkout', '-b', 'feature-branch'])
+  const emptyRepo = join(REPOS_ROOT, 'empty-branch')
+  rmSync(emptyRepo, { recursive: true, force: true })
+  mkdirSync(emptyRepo, { recursive: true })
+  setupIn(emptyRepo, ['init', '-b', 'main'])
+  const { json } = await postWbGit(REPOS_ROOT, '/wb-git/repos', { sessionId: 's1' })
+  const byRoot = new Map((json?.value?.repos ?? []).map((r) => [r.root, r]))
+  check('repos: feature branch reported', byRoot.get(branchRepo)?.branch === 'feature-branch', JSON.stringify(byRoot.get(branchRepo)?.branch))
+  check('repos: unborn repo has no branch (null)', byRoot.get(emptyRepo)?.branch === null, JSON.stringify(byRoot.get(emptyRepo)?.branch))
 }
 
 console.log('== step 20: repos scan layer cap ==')

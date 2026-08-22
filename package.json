@@ -1,6 +1,6 @@
 {
   "name": "dock-git",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Git history viewer for the DSH dock: browse the commit graph, branches, tags and remotes; stage, commit, push and manage repository settings.",
   "type": "module",
   "repository": {
