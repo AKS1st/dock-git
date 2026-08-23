@@ -42,6 +42,13 @@ dsh plugin add github:AKS1st/dock
 dsh plugin add github:AKS1st/dock-git
 ```
 
+从 npm registry 安装同样支持：
+
+```sh
+dsh plugin add dock-base
+dsh plugin add dock-git
+```
+
 ## 安全
 
 - `/wb-git` 路由只接受受信任来源（回环地址 / trustedHosts + 同源检查）的 POST。

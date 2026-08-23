@@ -42,6 +42,13 @@ dsh plugin add github:AKS1st/dock
 dsh plugin add github:AKS1st/dock-git
 ```
 
+The same plugins are also available from the npm registry:
+
+```sh
+dsh plugin add dock-base
+dsh plugin add dock-git
+```
+
 ## Security
 
 - The `/wb-git` route only accepts POSTs from trusted origins (loopback / trustedHosts plus same-origin check).
