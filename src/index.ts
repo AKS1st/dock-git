@@ -37,6 +37,9 @@ import {
   buildRemoteRemoveArgs,
   buildRemoteSetUrlArgs,
   buildRenameBranchArgs,
+  buildResetArgs,
+  buildRevertArgs,
+  buildMergeArgs,
   buildShowFileArgs,
   buildShowRefArgs,
   buildStageAddArgs,
@@ -95,6 +98,9 @@ export {
   buildStageAddArgs,
   buildStageResetArgs,
   buildCommitArgs,
+  buildResetArgs,
+  buildRevertArgs,
+  buildMergeArgs,
   parseGitLog,
   parseShowRef,
   parseCommitDetail,
@@ -731,14 +737,15 @@ async function endpointRemote(ctx: WbContext, payload: unknown): Promise<unknown
 }
 
 /** POST /wb-git/ref { sessionId, action, name?, newName?, hash?, remote? }
- *  Safe branch/tag writes, checkout, and push (push-branch sets the upstream
- *  with -u; push-tag pushes a tag). Every failure → fs-error (stderr in the
- *  message, e.g. a dirty-worktree checkout or an unpushable ref). */
+ *  Safe branch/tag writes, checkout, reset, revert, merge, and push (push-branch
+ *  sets the upstream with -u; push-tag pushes a tag). Every failure → fs-error
+ *  (stderr in the message, e.g. a dirty-worktree checkout or an unpushable
+ *  ref). */
 async function endpointRef(ctx: WbContext, payload: unknown): Promise<unknown> {
   const sessionId = stringOrUndefined(payload, 'sessionId')
   const raw = payload as Record<string, unknown> | null
   const action = raw?.['action']
-  if (typeof action !== 'string' || !['create-branch', 'rename-branch', 'delete-branch', 'create-tag', 'delete-tag', 'checkout', 'push-branch', 'push-tag'].includes(action)) {
+  if (typeof action !== 'string' || !['create-branch', 'rename-branch', 'delete-branch', 'create-tag', 'delete-tag', 'checkout', 'push-branch', 'push-tag', 'reset', 'revert', 'merge'].includes(action)) {
     throw new WbError('bad-request', `invalid ref action "${String(action)}"`)
   }
   const name = raw?.['name']
@@ -779,6 +786,32 @@ async function endpointRef(ctx: WbContext, payload: unknown): Promise<unknown> {
   if (action === 'delete-tag') {
     if (name === undefined) throw new WbError('bad-request', 'delete-tag requires name')
     await withGitError('tag -d', () => runGit(root, buildDeleteTagArgs(name)))
+    return { action, name }
+  }
+  if (action === 'reset') {
+    // Reset the current branch to `hash` in the chosen mode (mixed/soft/hard).
+    // The commit hash is validated up front (HASH_PATTERN); the mode is drawn
+    // from a fixed union by resetModeOf so it can never smuggle a git option.
+    if (hash === undefined) throw new WbError('bad-request', 'reset requires hash')
+    const mode = resetModeOf(raw)
+    await withGitError('reset', () => runGit(root, buildResetArgs(mode, hash)))
+    return { action, mode, hash }
+  }
+  if (action === 'revert') {
+    // Create a new commit that undoes `hash` (git revert --no-edit). A
+    // conflicting revert fails and surfaces as fs-error; the repo is left in
+    // git's normal conflict state, which the refresh shows.
+    if (hash === undefined) throw new WbError('bad-request', 'revert requires hash')
+    await withGitError('revert', () => runGit(root, buildRevertArgs(hash)))
+    return { action, hash }
+  }
+  if (action === 'merge') {
+    // Merge `name` (a local branch, tag or commit) into the current branch
+    // (git merge --no-edit --no-verify). Used for pulling one local branch
+    // into another. A conflicting merge fails and surfaces as fs-error; the
+    // repo is left in git's normal conflict state, which the refresh shows.
+    if (name === undefined) throw new WbError('bad-request', 'merge requires a branch name')
+    await withGitError('merge', () => runGit(root, buildMergeArgs(name)))
     return { action, name }
   }
   if (action === 'push-branch') {
@@ -850,6 +883,16 @@ function pushModeOf(raw: Record<string, unknown> | null): 'normal' | 'force-with
   if (mode === undefined || mode === '' || mode === 'normal') return 'normal'
   if (mode === 'force-with-lease') return 'force-with-lease'
   throw new WbError('bad-request', `invalid push mode "${String(mode)}"`)
+}
+
+/** Reset mode from a payload: '' / 'mixed' / 'soft' / 'hard' (anything else
+ *  → 400 bad-request). The mode is interpolated into `git reset --<mode>`, so
+ *  it is drawn from a fixed union — a leading dash can never reach git. */
+function resetModeOf(raw: Record<string, unknown> | null): 'mixed' | 'soft' | 'hard' {
+  const mode = raw?.['mode']
+  if (mode === undefined || mode === '' || mode === 'mixed') return 'mixed'
+  if (mode === 'soft' || mode === 'hard') return mode
+  throw new WbError('bad-request', `invalid reset mode "${String(mode)}"`)
 }
 
 // ── Commit working-tree endpoints (VS Code style status/stage/commit) ─────

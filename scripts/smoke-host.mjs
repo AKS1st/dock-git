@@ -27,7 +27,7 @@
  * The scratch repos are intentionally left in place for inspection.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -59,6 +59,9 @@ import {
   buildStageAddArgs,
   buildStageResetArgs,
   buildCommitArgs,
+  buildResetArgs,
+  buildRevertArgs,
+  buildMergeArgs,
   buildShowFileArgs,
   isRepoRoot,
   scanRepos,
@@ -76,6 +79,7 @@ const REPOS_ROOT = join(dirname(REPO), 'repos-scan-root')
 const REPOS_CAP_ROOT = join(dirname(REPO), 'repos-cap-root')
 const FETCH_REPO = join(dirname(REPO), 'smoke-fetch-repo')
 const FILE_CONTENT_REPO = join(dirname(REPO), 'smoke-file-content-repo')
+const RESET_REPO = join(dirname(REPO), 'smoke-reset-repo')
 
 let failures = 0
 function check(name, ok, detail) {
@@ -1035,6 +1039,120 @@ console.log('== step 18: commit layer ==')
   check('git: multiline Chinese message preserved', body.includes('第一行 subject') && body.includes('第二行 body 中文') && body.includes('\n'), JSON.stringify(body))
 }
 
+console.log('== step 18b: reset / revert layer (dedicated repo) ==')
+// Reset/revert move HEAD and rewrite history, so they run on a dedicated
+// scratch repo that no later step depends on.
+rmSync(RESET_REPO, { recursive: true, force: true })
+mkdirSync(RESET_REPO, { recursive: true })
+setupIn(RESET_REPO, ['init', '-b', 'main'])
+setupIn(RESET_REPO, ['config', 'user.name', 'Smoke Tester'])
+setupIn(RESET_REPO, ['config', 'user.email', 'smoke@example.com'])
+// c1 (root): add one.txt 'one'
+writeFileSync(join(RESET_REPO, 'one.txt'), 'one\n')
+setupIn(RESET_REPO, ['add', 'one.txt'])
+setupIn(RESET_REPO, ['commit', '-m', 'c1: add one.txt'], { authorDate: dateAt(80), committerDate: dateAt(80) })
+const resetC1 = (await runGit(RESET_REPO, ['rev-parse', 'HEAD'])).trim()
+// c2: modify one.txt to 'two' and add two.txt
+writeFileSync(join(RESET_REPO, 'one.txt'), 'two\n')
+writeFileSync(join(RESET_REPO, 'two.txt'), 'two\n')
+setupIn(RESET_REPO, ['add', 'one.txt', 'two.txt'])
+setupIn(RESET_REPO, ['commit', '-m', 'c2: modify one.txt, add two.txt'], { authorDate: dateAt(81), committerDate: dateAt(81) })
+const resetC2 = (await runGit(RESET_REPO, ['rev-parse', 'HEAD'])).trim()
+const resetHeadOf = async () => (await runGit(RESET_REPO, ['rev-parse', 'HEAD'])).trim()
+const resetStatusOf = async () => (await runGit(RESET_REPO, ['status', '--porcelain'])).trim()
+{
+  // pure-layer arg builders (verifies the new exports are wired through lib)
+  check('reset: buildResetArgs hard', JSON.stringify(buildResetArgs('hard', resetC1)) === JSON.stringify(['reset', '--hard', resetC1]), JSON.stringify(buildResetArgs('hard', resetC1)))
+  check('reset: buildResetArgs mixed', JSON.stringify(buildResetArgs('mixed', resetC1)) === JSON.stringify(['reset', '--mixed', resetC1]), JSON.stringify(buildResetArgs('mixed', resetC1)))
+  check('reset: buildResetArgs soft', JSON.stringify(buildResetArgs('soft', resetC1)) === JSON.stringify(['reset', '--soft', resetC1]), JSON.stringify(buildResetArgs('soft', resetC1)))
+  check(
+    'reset: buildRevertArgs',
+    JSON.stringify(buildRevertArgs(resetC2)) === JSON.stringify(['revert', '--no-edit', resetC2]),
+    JSON.stringify(buildRevertArgs(resetC2)),
+  )
+}
+{
+  // hard reset to c1: HEAD moves, two.txt dropped, clean tree
+  const { status, json } = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', hash: resetC1, mode: 'hard' })
+  check('route: reset --hard 200 ok', status === 200 && json?.ok === true && json?.value?.action === 'reset' && json?.value?.mode === 'hard', JSON.stringify(json))
+  check('route: reset --hard moves HEAD to c1', (await resetHeadOf()) === resetC1, await resetHeadOf())
+  check('route: reset --hard drops two.txt', !existsSync(join(RESET_REPO, 'two.txt')))
+  check('route: reset --hard leaves a clean tree', (await resetStatusOf()) === '', JSON.stringify(await resetStatusOf()))
+  await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', hash: resetC2, mode: 'hard' })
+}
+{
+  // mixed reset (mode omitted → default) to c1: HEAD moves, worktree kept
+  const { status, json } = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', hash: resetC1 })
+  check('route: reset --mixed (default) 200 ok', status === 200 && json?.ok === true && json?.value?.action === 'reset' && json?.value?.mode === 'mixed', JSON.stringify(json))
+  check('route: reset --mixed moves HEAD to c1', (await resetHeadOf()) === resetC1, await resetHeadOf())
+  // mixed reset re-sets the index to c1 but keeps the worktree, so two.txt is
+  // untracked and one.txt is modified.
+  check('route: reset --mixed keeps two.txt untracked', (await resetStatusOf()).includes('?? two.txt'), JSON.stringify(await resetStatusOf()))
+  await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', hash: resetC2, mode: 'hard' })
+}
+{
+  // soft reset to c1: HEAD moves, index/worktree stay at c2 (two.txt staged)
+  const { status, json } = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', hash: resetC1, mode: 'soft' })
+  check('route: reset --soft 200 ok', status === 200 && json?.ok === true && json?.value?.action === 'reset' && json?.value?.mode === 'soft', JSON.stringify(json))
+  check('route: reset --soft moves HEAD to c1', (await resetHeadOf()) === resetC1, await resetHeadOf())
+  check('route: reset --soft keeps two.txt staged', (await resetStatusOf()).includes('A  two.txt'), JSON.stringify(await resetStatusOf()))
+  await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', hash: resetC2, mode: 'hard' })
+}
+{
+  // reset validation: bad mode / missing hash / invalid hash all 400
+  const beforeHead = await resetHeadOf()
+  const badMode = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', hash: resetC1, mode: 'bad' })
+  check('route: reset invalid mode 400', badMode.status === 400 && badMode.json?.ok === false && badMode.json?.error?.code === 'bad-request', JSON.stringify(badMode.json))
+  const noHash = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', mode: 'soft' })
+  check('route: reset missing hash 400', noHash.status === 400 && noHash.json?.ok === false && noHash.json?.error?.code === 'bad-request', JSON.stringify(noHash.json))
+  const badHash = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', hash: 'zzz', mode: 'hard' })
+  check('route: reset invalid hash 400', badHash.status === 400 && badHash.json?.ok === false && badHash.json?.error?.code === 'bad-request', JSON.stringify(badHash.json))
+  check('route: reset validation leaves HEAD unchanged', (await resetHeadOf()) === beforeHead, await resetHeadOf())
+}
+{
+  // revert c2: creates a new commit that drops two.txt
+  const headBefore = await resetHeadOf()
+  const { status, json } = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'revert', hash: resetC2 })
+  check('route: revert 200 ok', status === 200 && json?.ok === true && json?.value?.action === 'revert' && json?.value?.hash === resetC2, JSON.stringify(json))
+  const headAfter = await resetHeadOf()
+  check('route: revert creates a new commit (HEAD moved)', headAfter !== headBefore && headAfter !== resetC2, headAfter.slice(0, 8))
+  const subject = (await runGit(RESET_REPO, ['log', '-1', '--format=%s'])).trim()
+  check('route: revert commit subject is Revert of c2', /^Revert "c2:/.test(subject), subject)
+  check('route: revert drops two.txt', !existsSync(join(RESET_REPO, 'two.txt')))
+  check('route: revert leaves a clean tree', (await resetStatusOf()) === '', JSON.stringify(await resetStatusOf()))
+  const count = (await runGit(RESET_REPO, ['rev-list', '--count', 'HEAD'])).trim()
+  check('route: revert added one commit (3 total)', count === '3', count)
+  const badHash = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'revert', hash: 'zzz' })
+  check('route: revert invalid hash 400', badHash.status === 400 && badHash.json?.ok === false && badHash.json?.error?.code === 'bad-request', JSON.stringify(badHash.json))
+  // restore target state (HEAD = c2, clean) for independence from later steps
+  await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'reset', hash: resetC2, mode: 'hard' })
+}
+
+console.log('== step 18c: merge layer (two local branches) ==')
+// RESET_REPO is left at c2 on main (clean). Create a feature branch off c2 with
+// an extra commit, then merge it back into main through the route.
+setupIn(RESET_REPO, ['checkout', '-b', 'feature', resetC2])
+writeFileSync(join(RESET_REPO, 'feat.txt'), 'feat\n')
+setupIn(RESET_REPO, ['add', 'feat.txt'])
+setupIn(RESET_REPO, ['commit', '-m', 'c3: feature commit'], { authorDate: dateAt(82), committerDate: dateAt(82) })
+const resetC3 = (await runGit(RESET_REPO, ['rev-parse', 'HEAD'])).trim()
+setupIn(RESET_REPO, ['checkout', 'main'])
+{
+  check('merge: buildMergeArgs', JSON.stringify(buildMergeArgs('feature')) === JSON.stringify(['merge', '--no-edit', '--no-verify', 'feature']), JSON.stringify(buildMergeArgs('feature')))
+}
+{
+  // merge feature (a strict descendant of main) → fast-forward to c3
+  const { status, json } = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'merge', name: 'feature' })
+  check('route: merge 200 ok', status === 200 && json?.ok === true && json?.value?.action === 'merge' && json?.value?.name === 'feature', JSON.stringify(json))
+  check('route: merge fast-forwards main to feature', (await resetHeadOf()) === resetC3, (await resetHeadOf()).slice(0, 8))
+  check('route: merge brings in feat.txt', existsSync(join(RESET_REPO, 'feat.txt')))
+  // leading dash would be parsed by git as an option (`git merge --bad`) → 400
+  const badName = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'merge', name: '--bad' })
+  check('route: merge invalid name 400', badName.status === 400 && badName.json?.ok === false && badName.json?.error?.code === 'bad-request', JSON.stringify(badName.json))
+  const missing = await postWbGit(RESET_REPO, '/wb-git/ref', { sessionId: 's1', action: 'merge' })
+  check('route: merge missing name 400', missing.status === 400 && missing.json?.ok === false && missing.json?.error?.code === 'bad-request', JSON.stringify(missing.json))
+}
+
 console.log('== step 19: repos scan (multi-repo workspace) ==')
 rmSync(REPOS_ROOT, { recursive: true, force: true })
 const repoA = join(REPOS_ROOT, 'repo-a')
@@ -1522,7 +1640,7 @@ const fc2hash = (await runGit(FILE_CONTENT_REPO, ['rev-parse', 'HEAD'])).trim()
   check('route: file-content non-existent commit exists:false', status === 200 && json?.ok === true && v?.exists === false, JSON.stringify(v))
 }
 
-console.log(`\nscratch repos left at: ${REPO}, ${EMPTY_REPO}, ${WRITE_REPO}, ${BARE_REMOTE}, ${NOT_REPO}, ${STAGE_REPO}, ${REPOS_ROOT} and ${REPOS_CAP_ROOT}`)
+console.log(`\nscratch repos left at: ${REPO}, ${EMPTY_REPO}, ${WRITE_REPO}, ${BARE_REMOTE}, ${NOT_REPO}, ${STAGE_REPO}, ${REPOS_ROOT}, ${RESET_REPO} and ${REPOS_CAP_ROOT}`)
 if (failures > 0) {
   console.log(`SMOKE FAILED: ${failures} check(s) failed`)
   process.exit(1)

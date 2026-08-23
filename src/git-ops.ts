@@ -326,6 +326,42 @@ export function buildCommitArgs(message: string): string[] {
   return ['commit', '--no-verify', '-m', message]
 }
 
+/**
+ * Reset the current branch to `hash` in one of git's three reset modes
+ * (`mixed` / `soft` / `hard`). The mode is interpolated as `--<mode>`, so a
+ * validated mode can never be parsed by git as a revision or option; callers
+ * must pass a mode from the fixed union (the endpoint validates it).
+ */
+export function buildResetArgs(mode: 'mixed' | 'soft' | 'hard', hash: string): string[] {
+  return ['reset', `--${mode}`, hash]
+}
+
+/**
+ * Revert `hash`: create a new commit that undoes the target commit's changes.
+ * `--no-edit` uses git's default revert message (no editor is opened — the
+ * API is non-interactive). Unlike `buildCommitArgs`, no `--no-verify` is
+ * passed: `git revert` has no such option, so the resulting commit runs the
+ * repo's normal commit-msg hook (a documented difference from staged commits,
+ * which skip hooks because the /wb-git API is browser-trust fenced). A
+ * conflicting revert fails and surfaces as an fs-error (the repo is left in
+ * git's normal conflict state).
+ */
+export function buildRevertArgs(hash: string): string[] {
+  return ['revert', '--no-edit', hash]
+}
+
+/**
+ * Merge `name` (a local branch, or tag/commit) into the current branch.
+ * `--no-edit` uses git's default merge message (no editor is opened — the API
+ * is non-interactive) and `--no-verify` skips the pre-merge-commit hook for
+ * the same reason `buildCommitArgs` does: the /wb-git API is browser-trust
+ * fenced, so hooks must not run on its behalf. A conflicting merge fails and
+ * surfaces as an fs-error (the repo is left in git's normal conflict state).
+ */
+export function buildMergeArgs(name: string): string[] {
+  return ['merge', '--no-edit', '--no-verify', name]
+}
+
 // ── Parsers ─────────────────────────────────────────────────────────────────
 
 /**

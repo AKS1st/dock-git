@@ -124,6 +124,11 @@ function shortHash(hash: string): string {
   return hash.length > 8 ? hash.slice(0, 8) : hash
 }
 
+/** i18n key of the localized label for one git reset mode. */
+function resetModeKey(mode: 'mixed' | 'soft' | 'hard'): string {
+  return mode === 'mixed' ? 'resetModeMixed' : mode === 'soft' ? 'resetModeSoft' : 'resetModeHard'
+}
+
 function absoluteDate(date: number): string {
   const d = new Date(date * 1000)
   const pad = (n: number): string => String(n).padStart(2, '0')
@@ -219,6 +224,9 @@ type DialogState =
   | { kind: 'create-branch'; hash: string }
   | { kind: 'add-tag'; hash: string }
   | { kind: 'checkout'; hash?: string; name?: string }
+  | { kind: 'reset'; hash: string }
+  | { kind: 'revert'; hash: string }
+  | { kind: 'merge'; name: string }
   | { kind: 'rename-branch'; name: string }
   | { kind: 'delete-branch'; name: string }
   | { kind: 'delete-tag'; name: string }
@@ -327,6 +335,7 @@ export function CommitView(props: ViewProps): ReactNode {
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [pushForm, setPushForm] = useState<PushForm>({ remote: 'origin', setUpstream: true, mode: 'normal' })
   const [remotes, setRemotes] = useState<RemoteRowWire[]>([])
+  const [resetMode, setResetMode] = useState<'mixed' | 'soft' | 'hard'>('mixed')
 
   // ── Sequence guards (stale responses are discarded) ──────────────────────
   const logSeq = useRef(0)
@@ -834,14 +843,18 @@ export function CommitView(props: ViewProps): ReactNode {
           { key: 'create-branch', label: t('createBranch'), onClick: () => setDialog({ kind: 'create-branch', hash: commit.hash }) },
           { key: 'add-tag', label: t('addTag'), onClick: () => setDialog({ kind: 'add-tag', hash: commit.hash }) },
           { key: 'checkout', label: t('checkoutCommit'), onClick: () => setDialog({ kind: 'checkout', hash: commit.hash }) },
+          { key: 'div2', divider: true },
+          { key: 'reset', label: t('resetCommit'), danger: true, onClick: () => { setResetMode('mixed'); setDialog({ kind: 'reset', hash: commit.hash }) } },
+          { key: 'revert', label: t('revertCommit'), onClick: () => setDialog({ kind: 'revert', hash: commit.hash }) },
         ]
         : []),
     ]
     if (commit.heads.length > 0) {
       const branchName = commit.heads[0]
-      items.push({ key: 'div2', divider: true })
+      items.push({ key: 'div3', divider: true })
       items.push(
         { key: 'co-branch', label: t('checkoutBranch'), onClick: () => setDialog({ kind: 'checkout', name: branchName }) },
+        { key: 'merge-branch', label: t('mergeBranch'), onClick: () => setDialog({ kind: 'merge', name: branchName }) },
         { key: 'push-branch', label: t('pushBranch'), onClick: () => setDialog({ kind: 'push', target: 'branch', name: branchName }) },
         { key: 'rename-branch', label: t('renameBranch'), onClick: () => setDialog({ kind: 'rename-branch', name: branchName }) },
         { key: 'delete-branch', label: t('deleteBranch'), onClick: () => setDialog({ kind: 'delete-branch', name: branchName }) },
@@ -855,6 +868,7 @@ export function CommitView(props: ViewProps): ReactNode {
   const openBranchMenu = useCallback((event: ReactMouseEvent, name: string): void => {
     openMenu(event, [
       { key: 'co', label: t('checkoutBranch'), onClick: () => setDialog({ kind: 'checkout', name }) },
+      { key: 'merge', label: t('mergeBranch'), onClick: () => setDialog({ kind: 'merge', name }) },
       { key: 'push', label: t('pushBranch'), onClick: () => setDialog({ kind: 'push', target: 'branch', name }) },
       { key: 'rename', label: t('renameBranch'), onClick: () => setDialog({ kind: 'rename-branch', name }) },
       { key: 'delete', label: t('deleteBranch'), danger: true, onClick: () => setDialog({ kind: 'delete-branch', name }) },
@@ -1570,6 +1584,73 @@ export function CommitView(props: ViewProps): ReactNode {
           onCancel: closeDialog,
         },
           createElement('div', null, t('confirmDeleteTag', { name: dialog.name })),
+        )
+        break
+      case 'reset': {
+        const modeLabel = t(resetModeKey(resetMode))
+        dialogNode = createElement(Dialog, {
+          key: 'reset',
+          open: true,
+          title: t('resetTitle'),
+          okLabel: t('dialogOk'),
+          cancelLabel: t('dialogCancel'),
+          onOk: () => {
+            const mode = resetMode
+            setDialog(null)
+            void handleRefWrite({ action: 'reset', hash: dialog.hash, mode }, t('resetDone', { hash: shortHash(dialog.hash), mode: modeLabel }))
+          },
+          onCancel: closeDialog,
+        },
+          createElement('div', { key: 'reset-confirm' }, t('confirmReset', { hash: shortHash(dialog.hash), mode: modeLabel })),
+          createElement('div', { key: 'reset-hint', className: 'dg-muted' },
+            createElement('div', null, t('resetHintMixed')),
+            createElement('div', null, t('resetHintSoft')),
+            createElement('div', null, t('resetHintHard')),
+          ),
+          createElement(DialogSelect, {
+            key: 'reset-mode',
+            label: t('resetModeLabel'),
+            value: resetMode,
+            options: [
+              { value: 'mixed', label: t('resetModeMixed') },
+              { value: 'soft', label: t('resetModeSoft') },
+              { value: 'hard', label: t('resetModeHard') },
+            ],
+            onChange: (mode) => setResetMode(mode === 'soft' || mode === 'hard' ? mode : 'mixed'),
+          }),
+        )
+        break
+      }
+      case 'revert':
+        dialogNode = createElement(Dialog, {
+          key: 'revert',
+          open: true,
+          title: t('revertTitle'),
+          okLabel: t('dialogOk'),
+          cancelLabel: t('dialogCancel'),
+          onOk: () => {
+            setDialog(null)
+            void handleRefWrite({ action: 'revert', hash: dialog.hash }, t('revertDone', { hash: shortHash(dialog.hash) }))
+          },
+          onCancel: closeDialog,
+        },
+          createElement('div', null, t('confirmRevert', { hash: shortHash(dialog.hash) })),
+        )
+        break
+      case 'merge':
+        dialogNode = createElement(Dialog, {
+          key: 'merge',
+          open: true,
+          title: t('mergeTitle'),
+          okLabel: t('dialogOk'),
+          cancelLabel: t('dialogCancel'),
+          onOk: () => {
+            setDialog(null)
+            void handleRefWrite({ action: 'merge', name: dialog.name }, t('mergeDone', { name: dialog.name }))
+          },
+          onCancel: closeDialog,
+        },
+          createElement('div', null, t('confirmMerge', { name: dialog.name })),
         )
         break
       case 'push': {

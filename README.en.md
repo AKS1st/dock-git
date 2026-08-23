@@ -15,8 +15,9 @@ Git history visualization plugin of the dock family: mounts a side-bar launcher 
 - **Commit history graph**: swimlane graph with branch/tag/remote badge glyphs and an "uncommitted changes" node; N+1 probe for "more commits".
 - **Commit details**: expand a commit to see the message, author, changed-file tree (added/modified/deleted/renamed), old/new file content three-column view, and diff (512 KiB truncation, UTF-16 safe).
 - **Multi-repo discovery**: scans the session workspace (cwd plus two levels of subdirectories) for independent git repositories and lets you switch the target.
-- **Branch/tag management**: create, rename, delete branches; create/delete tags; checkout via `git switch` (no path-semantics ambiguity).
+- **Branch/tag management**: create, rename, delete branches; create/delete tags; checkout via `git switch` (no path-semantics ambiguity); merge one local branch into another (`git merge --no-edit`, pulled into the current branch).
 - **Staging and commit**: VSCode-style status/stage/unstage/commit (`--no-verify`, repository hooks never run).
+- **Commit reset & revert**: right-click a commit to reset it (`git reset`) with a selectable mode (mixed / soft / hard), or revert it (`git revert --no-edit`, creating an inverse commit).
 - **Remote operations**: list / add / remove / set-url, fetch, pull, fetch-into, push (branch/tag, `--force-with-lease` supported).
 - **Config read/write**: read any repository config; writes are limited to `user.name` / `user.email`.
 - **i18n**: built-in Chinese/English UI following the DSH global locale.
