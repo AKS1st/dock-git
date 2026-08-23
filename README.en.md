@@ -41,15 +41,15 @@ Requires the `dock` base plugin:
 Recommended install from the npm registry:
 
 ```sh
-dsh plugin add dock-base
-dsh plugin add dock-git
+dsh plugin --profile web add dock-base
+dsh plugin --profile web add dock-git
 ```
 
 Or install from GitHub (alternative):
 
 ```sh
-dsh plugin add github:AKS1st/dock
-dsh plugin add github:AKS1st/dock-git
+dsh plugin --profile web add github:AKS1st/dock
+dsh plugin --profile web add github:AKS1st/dock-git
 ```
 
 ## Security
