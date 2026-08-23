@@ -37,16 +37,18 @@ dock 系列的 Git 历史可视化插件：在侧边栏挂载启动面板（活�
 
 需要 `dock` 基础插件：
 
-```sh
-dsh plugin add github:AKS1st/dock
-dsh plugin add github:AKS1st/dock-git
-```
-
-从 npm registry 安装同样支持：
+推荐从 npm registry 安装：
 
 ```sh
 dsh plugin add dock-base
 dsh plugin add dock-git
+```
+
+或通过 GitHub 安装（备选）：
+
+```sh
+dsh plugin add github:AKS1st/dock
+dsh plugin add github:AKS1st/dock-git
 ```
 
 ## 安全

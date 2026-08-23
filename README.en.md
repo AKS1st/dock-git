@@ -37,16 +37,18 @@ Git history visualization plugin of the dock family: mounts a side-bar launcher 
 
 Requires the `dock` base plugin:
 
-```sh
-dsh plugin add github:AKS1st/dock
-dsh plugin add github:AKS1st/dock-git
-```
-
-The same plugins are also available from the npm registry:
+Recommended install from the npm registry:
 
 ```sh
 dsh plugin add dock-base
 dsh plugin add dock-git
+```
+
+Or install from GitHub (alternative):
+
+```sh
+dsh plugin add github:AKS1st/dock
+dsh plugin add github:AKS1st/dock-git
 ```
 
 ## Security
