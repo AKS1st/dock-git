@@ -118,7 +118,7 @@ export type { RepoEntry } from './repos.ts'
 // ── Wire helpers (stripped from dock-files pattern) ────────────────────────
 
 /** Machine-readable error codes of the /wb-git API. */
-type WbErrorCode = 'bad-request' | 'forbidden' | 'fs-error' | 'not-found' | 'internal'
+type WbErrorCode = 'bad-request' | 'forbidden' | 'fs-error' | 'not-found' | 'workspace-not-ready' | 'internal'
 
 /** One API failure with its wire code and HTTP status. */
 export class WbError extends Error {
@@ -249,13 +249,17 @@ interface WbContext {
   effect(fn: () => void | (() => void), label?: string): void
 }
 
-/** Resolve a session's authoritative working directory. */
+/** Resolve a session's authoritative working directory.
+ *
+ * Never fall back to the Host process cwd: that directory is the Harness
+ * checkout in production, and running Git there would turn a transient session
+ * hydration gap into unrelated repository data. */
 function sessionCwdOf(ctx: WbContext, sessionId: string | undefined): string {
   if (sessionId !== undefined) {
     const cwd = ctx.sessions.get(sessionId)?.header.cwd
     if (cwd !== undefined && cwd !== '') return cwd
   }
-  return process.cwd()
+  throw new WbError('workspace-not-ready', 'workspace is not ready for this session', 409)
 }
 
 function messageOf(error: unknown): string {

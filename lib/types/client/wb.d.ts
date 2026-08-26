@@ -15,6 +15,11 @@ export interface WbEnvelope<T> {
         message: string;
     };
 }
+/** Error returned by a /wb-git route, retaining its machine-readable code. */
+export declare class WbRequestError extends Error {
+    readonly code: string;
+    constructor(code: string, message: string);
+}
 /** POST one /wb-git method; throws on transport/envelope failure. */
 export declare function postWb<T>(path: string, body: unknown): Promise<T>;
 /** Error → string, truncated so the op strip / settings error areas stay readable. */

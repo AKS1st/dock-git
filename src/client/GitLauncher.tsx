@@ -83,13 +83,15 @@ export function GitLauncher(props: ViewProps): ReactNode {
         setCwd(value.cwd)
         setRepos(value.repos)
         setLoading(false)
-        if (value.repos.length === 1 && value.repos[0].depth === 0) {
-          // Single repo at the workspace itself → open the graph window and
-          // collapse the dock (only the floating window remains). Always
-          // openView: replacing the seed drops a stale meta.repoRoot from a
-          // previously picked sub-repo, so the window shows the workspace
-          // repo again instead of the old one.
-          workbench.openView(GRAPH_VIEW_ID, { title: t('graphTitle') }, { floating: true })
+        if (value.repos.length === 1) {
+          // One repository is unambiguous at any scan depth. Bind the seed to
+          // this session; subdirectory repositories must carry an explicit
+          // root, while a workspace-root repository can use the session cwd.
+          const repo = value.repos[0]
+          workbench.openView(GRAPH_VIEW_ID, {
+            title: repo.name,
+            meta: { sessionId, ...(repo.depth === 0 ? {} : { repoRoot: repo.root }) },
+          }, { floating: true })
           workbench.updateLayout({ activity: null, sideBarOpen: false })
         }
         // Otherwise the repo picker stays in the side bar (dock not collapsed).
@@ -105,7 +107,10 @@ export function GitLauncher(props: ViewProps): ReactNode {
   /** Pick one repository → open its history in the floating window, collapse. */
   const openRepo = (repo: RepoEntry): void => {
     if (workbench === undefined) return
-    workbench.openView(GRAPH_VIEW_ID, { title: repo.name, meta: { repoRoot: repo.root } }, { floating: true })
+    workbench.openView(GRAPH_VIEW_ID, {
+      title: repo.name,
+      meta: { sessionId, repoRoot: repo.root },
+    }, { floating: true })
     workbench.updateLayout({ activity: null, sideBarOpen: false })
   }
 
@@ -157,6 +162,11 @@ export function GitLauncher(props: ViewProps): ReactNode {
         cwd !== null
           ? createElement('div', { className: 'dg-muted', style: { marginTop: 4, fontSize: 12 } }, cwd)
           : null,
+        createElement('button', {
+          className: 'dg-btn',
+          style: { marginTop: 8 },
+          onClick: () => setReloadTick((n) => n + 1),
+        }, t('retry')),
       )
       : rows,
   )

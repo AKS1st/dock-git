@@ -177,7 +177,7 @@ function stubCtx(cwd) {
     },
     sessions: {
       get() {
-        return { header: { cwd } }
+        return cwd === undefined ? { header: {} } : { header: { cwd } }
       },
     },
     webRuntime: { trustedHosts: [] },
@@ -1638,6 +1638,12 @@ const fc2hash = (await runGit(FILE_CONTENT_REPO, ['rev-parse', 'HEAD'])).trim()
   const { status, json } = await postWbGit(FILE_CONTENT_REPO, '/wb-git/file-content', { sessionId: 's1', hash: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', path: 'hello.txt', side: 'new' })
   const v = json?.value
   check('route: file-content non-existent commit exists:false', status === 200 && json?.ok === true && v?.exists === false, JSON.stringify(v))
+}
+
+console.log('== step 22: missing workspace cwd fails closed ==')
+{
+  const { status, json } = await postWbGit(undefined, '/wb-git/log', { sessionId: 'hydrating-session' })
+  check('route: missing cwd returns workspace-not-ready', status === 409 && json?.ok === false && json?.error?.code === 'workspace-not-ready', JSON.stringify(json))
 }
 
 console.log(`\nscratch repos left at: ${REPO}, ${EMPTY_REPO}, ${WRITE_REPO}, ${BARE_REMOTE}, ${NOT_REPO}, ${STAGE_REPO}, ${REPOS_ROOT}, ${RESET_REPO} and ${REPOS_CAP_ROOT}`)

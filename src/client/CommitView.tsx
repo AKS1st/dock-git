@@ -30,7 +30,7 @@ import { diffText } from './diff'
 import { ContextMenu, type MenuItem } from './context-menu'
 import { Dialog, DialogCheck, DialogInput, DialogSelect, PromptDialog } from './dialog'
 import { SettingsView, type DateFormat } from './SettingsView'
-import { messageOf, postWb, wbBody } from './wb'
+import { messageOf, postWb, wbBody, WbRequestError } from './wb'
 import {
   COLOURS,
   GRID,
@@ -248,8 +248,12 @@ export function CommitView(props: ViewProps): ReactNode {
 
   // The launcher opens this view with meta.repoRoot on the seed; absent means
   // the host runs git at the session working directory (wbBody omits it).
-  const seedMeta = (seed as { meta?: { repoRoot?: unknown } } | undefined)?.meta
-  const repoRoot = typeof seedMeta?.repoRoot === 'string' && seedMeta.repoRoot !== '' ? seedMeta.repoRoot : undefined
+  const seedMeta = (seed as { meta?: { repoRoot?: unknown; sessionId?: unknown } } | undefined)?.meta
+  const boundSessionId = typeof seedMeta?.sessionId === 'string' ? seedMeta.sessionId : undefined
+  // A persisted repo binding belongs to the session that selected it. Never
+  // send an old workspace path after the active session changes.
+  const rawRepoRoot = typeof seedMeta?.repoRoot === 'string' && seedMeta.repoRoot !== '' ? seedMeta.repoRoot : undefined
+  const repoRoot = rawRepoRoot !== undefined && boundSessionId !== sessionId ? undefined : rawRepoRoot
   const seedTitle = (seed as { title?: unknown } | undefined)?.title
 
   const locale = useLocale(ctx)
@@ -432,7 +436,13 @@ export function CommitView(props: ViewProps): ReactNode {
       .catch((cause) => {
         if (cancelled || seq !== logSeq.current) return
         setLoading(false)
-        setLoadError(messageOf(cause))
+        // Workspace hydration is a retryable state, not a repository result.
+        // Keep the view in its error/retry surface and never reinterpret it as
+        // a valid repository (especially not the Host process cwd).
+        const message = cause instanceof WbRequestError && cause.code === 'workspace-not-ready'
+          ? 'workspace is not ready; retry after it finishes loading'
+          : messageOf(cause)
+        setLoadError(message)
       })
     return () => { cancelled = true }
   }, [active, repoKey, branchFilter, showRemote, maxCommits, reloadTick, body])

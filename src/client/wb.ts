@@ -14,6 +14,14 @@ export interface WbEnvelope<T> {
   error?: { code: string; message: string }
 }
 
+/** Error returned by a /wb-git route, retaining its machine-readable code. */
+export class WbRequestError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message)
+    this.name = 'WbRequestError'
+  }
+}
+
 /** POST one /wb-git method; throws on transport/envelope failure. */
 export async function postWb<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
@@ -28,7 +36,7 @@ export async function postWb<T>(path: string, body: unknown): Promise<T> {
     throw new Error(`${path} returned a malformed response`)
   }
   if (json.ok !== true || json.value === undefined) {
-    throw new Error(json.error?.message ?? `${path} failed`)
+    throw new WbRequestError(json.error?.code ?? 'unknown', json.error?.message ?? `${path} failed`)
   }
   return json.value
 }

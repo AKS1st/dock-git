@@ -21,7 +21,7 @@ export type { CommitDetailMeta, FileChange, GitLogCommit, StatusFile } from './t
 export { MAX_SCAN_DIRS, currentBranchOf, isRepoRoot, scanRepos } from './repos.ts';
 export type { RepoEntry } from './repos.ts';
 /** Machine-readable error codes of the /wb-git API. */
-type WbErrorCode = 'bad-request' | 'forbidden' | 'fs-error' | 'not-found' | 'internal';
+type WbErrorCode = 'bad-request' | 'forbidden' | 'fs-error' | 'not-found' | 'workspace-not-ready' | 'internal';
 /** One API failure with its wire code and HTTP status. */
 export declare class WbError extends Error {
     readonly code: WbErrorCode;
