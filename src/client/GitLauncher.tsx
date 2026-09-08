@@ -154,20 +154,22 @@ export function GitLauncher(props: ViewProps): ReactNode {
       createElement('div', { className: 'dg-repo-path', title: repo.root }, repo.root),
     ))
 
-  return createElement('div', { className: 'dsh-wb-view dg-repo-list' },
+  return createElement('div', { className: 'dsh-wb-view dg-repo-launcher' },
     repos.length > 0 ? createElement('div', { className: 'dg-repo-list-hint' }, t('repoListHint')) : null,
-    repos.length === 0
-      ? createElement('div', { className: 'dg-repo-empty' },
-        createElement('div', null, t('noReposFound')),
-        cwd !== null
-          ? createElement('div', { className: 'dg-muted', style: { marginTop: 4, fontSize: 12 } }, cwd)
-          : null,
-        createElement('button', {
-          className: 'dg-btn',
-          style: { marginTop: 8 },
-          onClick: () => setReloadTick((n) => n + 1),
-        }, t('retry')),
-      )
-      : rows,
+    createElement('div', { className: 'dg-repo-list' },
+      repos.length === 0
+        ? createElement('div', { className: 'dg-repo-empty' },
+          createElement('div', null, t('noReposFound')),
+          cwd !== null
+            ? createElement('div', { className: 'dg-muted', style: { marginTop: 4, fontSize: 12 } }, cwd)
+            : null,
+          createElement('button', {
+            className: 'dg-btn',
+            style: { marginTop: 8 },
+            onClick: () => setReloadTick((n) => n + 1),
+          }, t('retry')),
+        )
+        : rows,
+    ),
   )
 }

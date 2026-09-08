@@ -489,19 +489,34 @@ const CSS = `
 .dg-empty { padding: 16px 12px; font-size: 13px; color: var(--dsw-alias-label-secondary, #656d76); }
 
 /* Repo selector (side-bar pane of multi-repo workspaces; like dock-files' tree). */
+.dsh-wb-root[data-mode="dock"] .dsh-wb-sidebar:has(.dg-repo-list) {
+  /* Keep the dock header fixed; the repository list below owns scrolling. */
+  overflow: hidden;
+}
+.dg-repo-launcher {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
 .dg-repo-list {
   display: flex;
+  flex: 1;
+  min-height: 0;
   flex-direction: column;
   gap: 2px;
-  min-height: 0;
+  overflow: auto;
 }
 .dg-repo-list-hint {
+  flex: none;
   font-size: 12px;
   color: var(--dsw-alias-label-secondary, #656d76);
-  padding: 0 2px 6px;
+  padding: 3px 2px 7px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, #d8dbe0);
 }
 .dg-repo-item {
   display: flex;
+  flex: none;
   flex-direction: column;
   gap: 1px;
   padding: 5px 8px;
