@@ -28,6 +28,15 @@ export function apply(ctx: WorkbenchContext): void {
   // Optional-peer guard: skip silently when the base is absent.
   if (workbench === undefined) return
 
+  ctx.effect(() => workbench.registerPlugin({
+    id: 'dock-git',
+    title: 'Git',
+    description: 'Git history viewer for the DSH dock: browse the commit graph, branches, tags and remotes; stage, commit, push and manage repository settings.',
+    icon: GIT_ICON,
+    hasEntry: true,
+    order: 20,
+  }), 'dock-git: plugin metadata')
+
   // Panel styles (SVG overlay, ref chips, rows, detail panel).
   ctx.effect(() => mountStyles(), 'dock-git: styles')
 
@@ -35,6 +44,7 @@ export function apply(ctx: WorkbenchContext): void {
   // (which in turn opens the floating graph window).
   ctx.effect(() => workbench.registerActivityBarItem({
     id: 'git',
+    pluginId: 'dock-git',
     title: translate(detectLocale(ctx), 'graphTitle'),
     icon: GIT_ICON,
     order: 20,
