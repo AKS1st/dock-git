@@ -62,8 +62,15 @@ import { scanRepos } from './repos.ts'
 
 export const name = 'dock-git'
 
-/** Services required before mounting. */
-export const inject = ['webServer', 'sessions', 'webRuntime']
+/**
+ * Services required before mounting.
+ *
+ * `webRuntime` used to be listed here and supplied `trustedHosts`; DSH 0.2
+ * replaced that service with the `connection` service, which is read lazily
+ * through {@link declaredTrustedHosts} so a host without it still mounts
+ * (loopback-only fence, the pre-0.2 behaviour).
+ */
+export const inject = ['webServer', 'sessions']
 
 // Re-exported for the host smoke script (scripts/smoke-host.mjs), which drives
 // the data layer straight from lib/index.js after `pnpm run build`.
@@ -213,6 +220,21 @@ function isTrustedAuthority(hostUrl: URL, trustedHosts: readonly string[]): bool
   })
 }
 
+/**
+ * Authorities this deployment declared besides loopback.
+ *
+ * Read per request from the host's `connection` service (`trustedHosts`), which
+ * DSH 0.2 provides; older hosts exposed the same list on `webRuntime`. A host
+ * with neither keeps the loopback-only fence, never a crash.
+ */
+function declaredTrustedHosts(ctx: WbContext): readonly string[] {
+  if (typeof ctx.get !== 'function') return []
+  const connection = ctx.get('connection') as { trustedHosts?: readonly string[] } | undefined
+  const declared = connection?.trustedHosts
+  if (!Array.isArray(declared)) return []
+  return declared.filter((entry): entry is string => typeof entry === 'string')
+}
+
 /** DNS-rebinding / cross-site defense (not authentication). */
 function isTrustedRequest(request: IncomingMessage, trustedHosts: readonly string[]): boolean {
   const host = header(request.headers, 'host')
@@ -243,9 +265,13 @@ interface WbContext {
   sessions: {
     get(sessionId: string): { header: { cwd?: string } } | undefined
   }
-  webRuntime: {
-    trustedHosts: readonly string[]
-  }
+  /**
+   * Read a service without declaring a hard dependency on it.
+   *
+   * Used for the optional `connection` service: a host that does not provide
+   * it keeps the loopback-only fence instead of failing to mount.
+   */
+  get?(name: string): unknown
   effect(fn: () => void | (() => void), label?: string): void
 }
 
@@ -273,6 +299,19 @@ async function withGitError<T>(label: string, fn: () => Promise<T>): Promise<T> 
   } catch (error) {
     throw new WbError('fs-error', `${label} failed: ${messageOf(error)}`)
   }
+}
+
+/**
+ * Spell a path the way this host spells paths.
+ *
+ * `git rev-parse --show-toplevel` prints forward slashes on Windows
+ * (`E:/work/repo`) while the workspace, the session cwd and `path.resolve()`
+ * all print backslashes (`E:\work\repo`). Normalizing at the source keeps
+ * every `root` field in one spelling, so the client can display it and the
+ * scan can compare it.
+ */
+function nativePath(value: string): string {
+  return resolve(value)
 }
 
 // ── repoRoot (explicit repository root) ────────────────────────────────────
@@ -355,7 +394,7 @@ async function endpointStatus(ctx: WbContext, payload: unknown): Promise<unknown
       root = repoRoot
     } else {
       try {
-        root = (await runGit(cwd, ['rev-parse', '--show-toplevel'])).trim()
+        root = nativePath((await runGit(cwd, ['rev-parse', '--show-toplevel'])).trim())
       } catch {
         root = null
       }
@@ -425,7 +464,7 @@ async function endpointLog(ctx: WbContext, payload: unknown): Promise<unknown> {
     root = repoRoot
   } else {
     try {
-      root = (await runGit(cwd, ['rev-parse', '--show-toplevel'])).trim()
+      root = nativePath((await runGit(cwd, ['rev-parse', '--show-toplevel'])).trim())
     } catch {
       return { isRepo: false, root: null, branch: null, commits: [], more: false, head: null }
     }
@@ -522,7 +561,7 @@ async function endpointDetail(ctx: WbContext, payload: unknown): Promise<unknown
     root = repoRoot
   } else {
     try {
-      root = (await runGit(cwd, ['rev-parse', '--show-toplevel'])).trim()
+      root = nativePath((await runGit(cwd, ['rev-parse', '--show-toplevel'])).trim())
     } catch (error) {
       throw new WbError('fs-error', `not a git work tree at "${cwd}": ${messageOf(error)}`)
     }
@@ -603,7 +642,7 @@ function isValidRefName(name: string): boolean {
 /** Resolve the work-tree root or throw the detail-style fs-error. */
 async function workTreeRootOf(ctx: WbContext, cwd: string): Promise<string> {
   try {
-    return (await runGit(cwd, ['rev-parse', '--show-toplevel'])).trim()
+    return nativePath((await runGit(cwd, ['rev-parse', '--show-toplevel'])).trim())
   } catch (error) {
     throw new WbError('fs-error', `not a git work tree at "${cwd}": ${messageOf(error)}`)
   }
@@ -1212,7 +1251,7 @@ export function apply(ctx: WbContext): void {
     kind: 'prefix',
     path: '/wb-git',
     handler: async (req, res) => {
-      if (!isTrustedRequest(req, ctx.webRuntime.trustedHosts)) {
+      if (!isTrustedRequest(req, declaredTrustedHosts(ctx))) {
         writeJson(res, 403, { ok: false, error: { code: 'forbidden', message: 'forbidden' } })
         return
       }

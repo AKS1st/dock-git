@@ -14,7 +14,14 @@
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 export declare const name = "dock-git";
-/** Services required before mounting. */
+/**
+ * Services required before mounting.
+ *
+ * `webRuntime` used to be listed here and supplied `trustedHosts`; DSH 0.2
+ * replaced that service with the `connection` service, which is read lazily
+ * through {@link declaredTrustedHosts} so a host without it still mounts
+ * (loopback-only fence, the pre-0.2 behaviour).
+ */
 export declare const inject: string[];
 export { SEP, runGit, buildLogArgs, buildPushBranchArgs, buildPushTagArgs, buildDetailArgs, buildShowFileArgs, buildShowRefArgs, buildBranchArgs, buildConfigGetArgs, buildConfigSetArgs, buildRemoteListArgs, buildRemoteAddArgs, buildRemoteRemoveArgs, buildRemoteSetUrlArgs, buildCreateBranchArgs, buildRenameBranchArgs, buildDeleteBranchArgs, buildCreateTagArgs, buildDeleteTagArgs, buildCheckoutArgs, buildSwitchArgs, buildSwitchDetachArgs, buildFetchArgs, buildPullArgs, buildFetchIntoArgs, buildStatusFilesArgs, buildStageAddArgs, buildStageResetArgs, buildCommitArgs, buildResetArgs, buildRevertArgs, buildMergeArgs, parseGitLog, parseShowRef, parseCommitDetail, parseNameStatus, parseNumStat, parseBranches, parseRemotes, parseStatusFiles, } from './git-ops.ts';
 export type { CommitDetailMeta, FileChange, GitLogCommit, StatusFile } from './types.ts';
@@ -43,9 +50,13 @@ interface WbContext {
             };
         } | undefined;
     };
-    webRuntime: {
-        trustedHosts: readonly string[];
-    };
+    /**
+     * Read a service without declaring a hard dependency on it.
+     *
+     * Used for the optional `connection` service: a host that does not provide
+     * it keeps the loopback-only fence instead of failing to mount.
+     */
+    get?(name: string): unknown;
     effect(fn: () => void | (() => void), label?: string): void;
 }
 export declare function apply(ctx: WbContext): void;

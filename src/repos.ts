@@ -36,6 +36,23 @@ export interface RepoEntry {
 /** Directory-enumeration cap per scan layer (perf bound on one click). */
 export const MAX_SCAN_DIRS = 200
 
+/**
+ * Whether two absolute paths name the same directory.
+ *
+ * `git rev-parse --show-toplevel` prints forward slashes on Windows
+ * (`E:/work/repo`) while `path.resolve()` prints backslashes (`E:\work\repo`),
+ * so a raw `===` made every repository invisible on Windows — the scan
+ * reported "no repositories" for a workspace full of them. `resolve()` here
+ * only normalizes separators and `..`; it never touches the filesystem, so it
+ * stays as cheap as the comparison it replaces. Drive-letter case is compared
+ * insensitively because git and Windows may disagree about it.
+ */
+function samePath(left: string, right: string): boolean {
+  const a = resolve(left)
+  const b = resolve(right)
+  return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b
+}
+
 /** True when dir is itself a git repository root (toplevel === dir). */
 export async function isRepoRoot(dir: string, runGit: (cwd: string, args: string[]) => Promise<string>): Promise<boolean> {
   try {
@@ -43,7 +60,7 @@ export async function isRepoRoot(dir: string, runGit: (cwd: string, args: string
     // symlinks, while git reports the canonical path (getcwd resolves links).
     // Callers must pass symlink-free paths; scanRepos realpaths its base
     // before descending.
-    return (await runGit(dir, ['rev-parse', '--show-toplevel'])).trim() === resolve(dir)
+    return samePath((await runGit(dir, ['rev-parse', '--show-toplevel'])).trim(), dir)
   } catch {
     return false
   }

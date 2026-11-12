@@ -180,7 +180,11 @@ function stubCtx(cwd) {
         return cwd === undefined ? { header: {} } : { header: { cwd } }
       },
     },
-    webRuntime: { trustedHosts: [] },
+    // The host's `connection` service replaced `webRuntime` in DSH 0.2; the
+    // plugin reads `trustedHosts` from it lazily through `ctx.get()`.
+    get(name) {
+      return name === 'connection' ? { trustedHosts: [] } : undefined
+    },
     effect(fn) {
       fn()
     },
@@ -234,7 +238,9 @@ try {
 }
 try {
   const top = (await runGit(REPO, ['rev-parse', '--show-toplevel'])).trim()
-  check('status: show-toplevel', top === REPO, top)
+  // git prints forward slashes on Windows (`E:/tmp/x`) while REPO is native
+  // (`E:\tmp\x`); compare the normalized spelling, not the raw bytes.
+  check('status: show-toplevel', resolve(top) === resolve(REPO), top)
 } catch (error) {
   check('status: show-toplevel', false, error.message)
 }
